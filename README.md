@@ -5,29 +5,12 @@ A multi-pane live view: cluster CPU/MEM history (braille graphs), every pod
 across all namespaces with per-pod CPU sparklines, a container-detail pane, an
 auto-tailed logs pane for the selected pod, and per-namespace resource meters.
 
-![kubeview demo](docs/demo.gif)
-
 ![kubeview screenshot](docs/screenshot.png)
+
+![kubeview demo](docs/demo.gif)
 
 > Try it without a cluster: `kubeview --demo` renders a synthetic cluster (the
 > data used for the screenshot and animation above).
-
-```
-╭─ cluster ───────────────────────────────────────────────────────────╮
-│ CPU  13% 1523m/12000m                              NODE        live   │
-│  ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  ● jip-rosetta         │
-│ MEM  19% 8.9G/46.9G                                 cpu ⣀⣀⣀ [▓▓░░░]   │
-╰──────────────────────────────────────────────────────────────────────╯
-╭─ pods (67) ──────────────────────────╮╭─ details: auth-backend ──────╮
-│ NS    POD            STATUS  CPU CPU~ ││ Running  node:…  cpu:3m …     │
-│ demo  brokenpod  CrashLoopB… 0m  ▁▁▁  │╰──────────────────────────────╯
-│ admin init-exts…    Running 1133 ████ │╭─ logs: auth-backend ─────────╮
-│ ...                                   ││ INFO: "GET /auth-check" 200  │
-╰───────────────────────────────────────╯╰──────────────────────────────╯
-╭─ namespaces ─────────────────────────────────────────────────────────╮
-│ admin   17/17 pods │ cpu [▓░░░] 10% 1171m │ mem [░░░░]  3% 1.2G        │
-╰──────────────────────────────────────────────────────────────────────╯
-```
 
 ## Install
 

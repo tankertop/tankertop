@@ -89,6 +89,10 @@ type resourcePair struct {
 // Collect gathers pods, nodes and (if available) metrics into a Snapshot.
 // namespace == "" means all namespaces.
 func (c *Client) Collect(ctx context.Context, namespace string) Snapshot {
+	if c.demo {
+		c.demoTick++
+		return DemoSnapshot(c.demoTick)
+	}
 	snap := Snapshot{Context: c.Context, CollectedAt: time.Now()}
 
 	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})

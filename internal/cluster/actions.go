@@ -12,6 +12,9 @@ import (
 // DeletePod deletes a single pod. If it is managed by a controller it will be
 // recreated automatically.
 func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
+	if c.demo {
+		return nil
+	}
 	return c.Clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
@@ -37,6 +40,9 @@ func (c *Client) deploymentForPod(ctx context.Context, p PodInfo) (string, bool)
 // mechanism as `kubectl rollout restart`). If the pod is not part of a
 // Deployment it falls back to deleting the pod. Returns a human-readable note.
 func (c *Client) RestartWorkload(ctx context.Context, p PodInfo) (string, error) {
+	if c.demo {
+		return "demo: would restart " + p.Controller, nil
+	}
 	if dep, ok := c.deploymentForPod(ctx, p); ok {
 		patch := fmt.Sprintf(
 			`{"spec":{"template":{"metadata":{"annotations":{"kubeview.dev/restartedAt":%q}}}}}`,
@@ -63,6 +69,12 @@ type ScaleTarget struct {
 
 // ScaleInfo resolves the Deployment behind a pod and its current replica count.
 func (c *Client) ScaleInfo(ctx context.Context, p PodInfo) (ScaleTarget, bool) {
+	if c.demo {
+		if len(p.Controller) > 11 && p.Controller[:11] == "Deployment/" {
+			return ScaleTarget{Namespace: p.Namespace, Name: p.Controller[11:], Replicas: 2}, true
+		}
+		return ScaleTarget{}, false
+	}
 	dep, ok := c.deploymentForPod(ctx, p)
 	if !ok {
 		return ScaleTarget{}, false
@@ -76,6 +88,9 @@ func (c *Client) ScaleInfo(ctx context.Context, p PodInfo) (ScaleTarget, bool) {
 
 // Scale sets the replica count of a Deployment.
 func (c *Client) Scale(ctx context.Context, namespace, deployment string, replicas int32) error {
+	if c.demo {
+		return nil
+	}
 	s, err := c.Clientset.AppsV1().Deployments(namespace).GetScale(ctx, deployment, metav1.GetOptions{})
 	if err != nil {
 		return err

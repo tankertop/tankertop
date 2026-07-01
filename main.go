@@ -31,6 +31,7 @@ func main() {
 	frameMode := flag.String("frame-mode", "list", "frame mode for -dump-frame: list|detail")
 	truecolor := flag.Bool("truecolor", true, "force 24-bit colour (btop-style gradients)")
 	theme := flag.String("theme", cfg.Theme, "colour theme: tokyonight|gruvbox|nord|dracula|mono")
+	demo := flag.Bool("demo", false, "run against a synthetic demo cluster (no kubeconfig needed)")
 	flag.Parse()
 
 	if *showVersion {
@@ -50,11 +51,18 @@ func main() {
 	klog.SetOutput(io.Discard)
 	klog.LogToStderr(false)
 
-	client, err := cluster.New(*kubeconfig)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "kubeview: cannot connect to cluster: %v\n", err)
-		fmt.Fprintln(os.Stderr, "hint: on a microk8s node run:  microk8s config > ~/.kube/config")
-		os.Exit(1)
+	var client *cluster.Client
+	if *demo {
+		client = cluster.NewDemo()
+	} else {
+		var err error
+		client, err = cluster.New(*kubeconfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "kubeview: cannot connect to cluster: %v\n", err)
+			fmt.Fprintln(os.Stderr, "hint: on a microk8s node run:  microk8s config > ~/.kube/config")
+			fmt.Fprintln(os.Stderr, "  or try:  kubeview --demo")
+			os.Exit(1)
+		}
 	}
 
 	if *snapshot {

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"math"
 	"os/exec"
 	"sort"
 	"strings"
@@ -618,6 +619,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) recordHistory() {
+	// In demo mode, backfill a full history on the first sample so the graphs
+	// and sparklines are populated immediately (no waiting for real ticks).
+	if len(m.cpuHist) == 0 && strings.Contains(m.snap.Context, "demo") {
+		m.backfillDemoHistory()
+	}
+
 	cpu, mem, _, _ := m.clusterUsage()
 	m.cpuHist = appendHist(m.cpuHist, cpu, histLen)
 	m.memHist = appendHist(m.memHist, mem, histLen)
@@ -641,6 +648,38 @@ func (m *Model) recordHistory() {
 	for k := range m.podCPU {
 		if _, ok := seen[k]; !ok {
 			delete(m.podCPU, k)
+		}
+	}
+}
+
+// backfillDemoHistory seeds full synthetic history for the demo cluster.
+func (m *Model) backfillDemoHistory() {
+	cpu, mem, _, _ := m.clusterUsage()
+	for i := 0; i < histLen; i++ {
+		t := float64(i)
+		m.cpuHist = append(m.cpuHist, clamp01(cpu+0.14*math.Sin(t*0.13)+0.05*math.Sin(t*0.5)))
+		m.memHist = append(m.memHist, clamp01(mem+0.04*math.Sin(t*0.09)))
+	}
+	for _, n := range m.snap.Nodes {
+		var cf, mf float64
+		if n.CPUCapacityMilli > 0 {
+			cf = float64(n.CPUUsedMilli) / float64(n.CPUCapacityMilli)
+		}
+		if n.MemCapacityBytes > 0 {
+			mf = float64(n.MemUsedBytes) / float64(n.MemCapacityBytes)
+		}
+		for i := 0; i < histLen; i++ {
+			t := float64(i)
+			m.nodeCPU[n.Name] = append(m.nodeCPU[n.Name], clamp01(cf+0.12*math.Sin(t*0.2)))
+			m.nodeMEM[n.Name] = append(m.nodeMEM[n.Name], clamp01(mf+0.03*math.Sin(t*0.1)))
+		}
+	}
+	for j, p := range m.snap.Pods {
+		key := p.Namespace + "/" + p.Name
+		base := float64(p.CPUMilli)
+		for i := 0; i < podHistLen; i++ {
+			t := float64(i)
+			m.podCPU[key] = append(m.podCPU[key], math.Max(0, base+0.35*base*math.Sin(t*0.4+float64(j))))
 		}
 	}
 }

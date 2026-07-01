@@ -23,6 +23,15 @@ type Client struct {
 	Metrics   *metricsv.Clientset
 	Context   string
 	cfg       *rest.Config
+
+	demo     bool
+	demoTick int
+}
+
+// NewDemo returns a client that serves a synthetic cluster (no API access).
+// Used by `kubeview --demo` for screenshots, demos and trying it out offline.
+func NewDemo() *Client {
+	return &Client{Context: "demo", demo: true}
 }
 
 // New builds a client from an explicit kubeconfig path, $KUBECONFIG, ~/.kube/config,
@@ -73,6 +82,9 @@ func loadConfig(path string) (*rest.Config, string, error) {
 // previous is true it returns logs from the previous terminated instance
 // (useful for diagnosing CrashLoopBackOff).
 func (c *Client) Logs(ctx context.Context, namespace, pod, container string, lines int64, previous bool) (string, error) {
+	if c.demo {
+		return demoLogs(pod), nil
+	}
 	req := c.Clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
 		Container: container,
 		TailLines: &lines,
@@ -93,6 +105,9 @@ func (c *Client) Logs(ctx context.Context, namespace, pod, container string, lin
 // Exec runs a non-interactive command in a container and returns combined
 // stdout+stderr. Used for quick probes (env, ps, df, ls, …).
 func (c *Client) Exec(ctx context.Context, namespace, pod, container string, command []string) (string, error) {
+	if c.demo {
+		return demoInspect(pod), nil
+	}
 	req := c.Clientset.CoreV1().RESTClient().Post().
 		Resource("pods").Name(pod).Namespace(namespace).SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
@@ -117,6 +132,9 @@ func (c *Client) Exec(ctx context.Context, namespace, pod, container string, com
 
 // PodYAML returns the pod manifest as YAML (with noisy managedFields stripped).
 func (c *Client) PodYAML(ctx context.Context, namespace, name string) (string, error) {
+	if c.demo {
+		return demoYAML(namespace, name), nil
+	}
 	p, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return "", err
@@ -132,6 +150,9 @@ func (c *Client) PodYAML(ctx context.Context, namespace, name string) (string, e
 
 // PodEvents returns recent events for a pod, newest last, formatted for display.
 func (c *Client) PodEvents(ctx context.Context, namespace, name string) ([]string, error) {
+	if c.demo {
+		return demoPodEvents(name), nil
+	}
 	list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: "involvedObject.name=" + name,
 	})

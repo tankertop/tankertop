@@ -2,13 +2,9 @@
 #
 # Install kubeview from GitHub Releases.
 #
-# Because the repo is private, this uses the GitHub CLI (`gh`) so it can
-# authenticate. Install gh (https://cli.github.com) and run `gh auth login`
-# first, or use `go install` (see README) if you have Go + git credentials.
-#
 # Usage:
-#   ./install.sh                 # latest release
-#   ./install.sh v0.1.0          # a specific tag
+#   curl -fsSL https://raw.githubusercontent.com/tpenzkofer/kubeview/main/install.sh | bash
+#   ./install.sh v0.1.0            # a specific tag
 #   KUBEVIEW_DEST=~/bin ./install.sh
 #
 set -euo pipefail
@@ -24,21 +20,26 @@ case "$arch" in
   *) echo "unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 
-if ! command -v gh >/dev/null 2>&1; then
-  echo "error: this installer needs the GitHub CLI (gh) for the private repo." >&2
-  echo "install gh and run 'gh auth login', or use: go install $REPO@latest" >&2
+tag="${1:-}"
+if [ -z "$tag" ]; then
+  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep -m1 '"tag_name"' | cut -d'"' -f4)
+fi
+if [ -z "$tag" ]; then
+  echo "error: could not determine the latest release tag for $REPO" >&2
+  echo "pass one explicitly, e.g. install.sh v0.1.0" >&2
   exit 1
 fi
 
-tag="${1:-$(gh release view -R "$REPO" --json tagName -q .tagName)}"
-echo "installing kubeview $tag ($os/$arch) from $REPO"
+asset="kubeview_${tag#v}_${os}_${arch}.tar.gz"
+url="https://github.com/$REPO/releases/download/$tag/$asset"
+echo "installing kubeview $tag ($os/$arch)"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-gh release download "$tag" -R "$REPO" \
-  --pattern "*_${os}_${arch}.tar.gz" --dir "$tmp"
-tar -xzf "$tmp"/*.tar.gz -C "$tmp"
+curl -fsSL "$url" -o "$tmp/$asset"
+tar -xzf "$tmp/$asset" -C "$tmp"
 
 if install -m 0755 "$tmp/kubeview" "$DEST/kubeview" 2>/dev/null; then
   :

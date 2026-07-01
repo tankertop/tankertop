@@ -5,6 +5,13 @@ A multi-pane live view: cluster CPU/MEM history (braille graphs), every pod
 across all namespaces with per-pod CPU sparklines, a container-detail pane, an
 auto-tailed logs pane for the selected pod, and per-namespace resource meters.
 
+![kubeview demo](docs/demo.gif)
+
+![kubeview screenshot](docs/screenshot.png)
+
+> Try it without a cluster: `kubeview --demo` renders a synthetic cluster (the
+> data used for the screenshot and animation above).
+
 ```
 ╭─ cluster ───────────────────────────────────────────────────────────╮
 │ CPU  13% 1523m/12000m                              NODE        live   │
@@ -26,11 +33,9 @@ auto-tailed logs pane for the selected pod, and per-namespace resource meters.
 
 kubeview is a single static binary (no runtime deps). Pick one:
 
-**Release binary (installer):** run on the target machine (needs the GitHub CLI
-`gh`, since the repo is private):
+**Release binary (installer):** run on the target machine:
 
 ```sh
-gh auth login                       # once
 curl -fsSL https://raw.githubusercontent.com/tpenzkofer/kubeview/main/install.sh | bash
 # or a specific version:  ... | bash -s -- v0.1.0
 ```
@@ -38,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/tpenzkofer/kubeview/main/install.sh
 **With Go (≥ the version in `go.mod`):**
 
 ```sh
-GOPRIVATE=github.com/tpenzkofer go install github.com/tpenzkofer/kubeview@latest
+go install github.com/tpenzkofer/kubeview@latest
 ```
 
 **From source:**
@@ -85,6 +90,8 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 
 ```sh
 ./kubeview                  # interactive btop-style TUI (all namespaces)
+./kubeview --demo           # synthetic cluster, no kubeconfig needed
+./kubeview -theme gruvbox   # tokyonight|gruvbox|nord|dracula|mono
 ./kubeview -namespace demo  # single namespace
 ./kubeview -interval 1s     # refresh rate
 ./kubeview --snapshot       # print one plain-text frame and exit (scriptable)

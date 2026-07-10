@@ -276,8 +276,20 @@ func (m Model) treeLines(inner, rows int) []string {
 	lastNS, lastCtl := "\x00", "\x00"
 	for idx, p := range m.rows {
 		if p.Namespace != lastNS {
-			disp = append(disp, drow{styHeader.Render("▸ " + p.Namespace), -1})
+			nsPods, nsReady, nsCPU, nsMem, workloads := nsAgg(m.rows, p.Namespace)
+			caret := "▾"
+			if m.collapsed[nsKey(p.Namespace)] {
+				caret = "▸"
+			}
+			disp = append(disp, drow{
+				styDim.Render(caret) + " " + styHeader.Render(p.Namespace) +
+					styDim.Render(fmt.Sprintf("  (%d workload%s, %d pod%s, %d ready)  cpu %s  mem %s",
+						workloads, plural(workloads), nsPods, plural(nsPods), nsReady,
+						humanCPU(nsCPU), humanBytes(nsMem))), -1})
 			lastNS, lastCtl = p.Namespace, "\x00"
+		}
+		if m.collapsed[nsKey(p.Namespace)] {
+			continue // whole namespace folded away
 		}
 		if p.Controller != lastCtl {
 			cnt, ready, cpu, mem := groupAgg(m.rows, p.Namespace, p.Controller)
@@ -362,6 +374,27 @@ func (m Model) treePodRow(p cluster.PodInfo, selected bool, inner int, refCPU fl
 		valueCell(humanBytes(p.MemBytes), p.MemBytes == 0, wMem, neutral),
 	}, " ")
 	return indent + colored + " " + spark
+}
+
+// nsAgg totals one namespace across the filtered rows.
+func nsAgg(rows []cluster.PodInfo, ns string) (count, ready int, cpu, mem int64, workloads int) {
+	seen := map[string]struct{}{}
+	for _, p := range rows {
+		if p.Namespace != ns {
+			continue
+		}
+		count++
+		cpu += p.CPUMilli
+		mem += p.MemBytes
+		if p.Total > 0 && p.Ready == p.Total {
+			ready++
+		}
+		if _, ok := seen[p.Controller]; !ok {
+			seen[p.Controller] = struct{}{}
+			workloads++
+		}
+	}
+	return
 }
 
 func groupAgg(rows []cluster.PodInfo, ns, ctl string) (count, ready int, cpu, mem int64) {
@@ -1127,7 +1160,7 @@ func (m Model) renderFooter() string {
 		case m.focus == focusPane:
 			keys = "LOGS  ↑/↓ scroll · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
 		case m.tree:
-			keys = "↑/↓ move · space fold · o sort · t flat · tab pane · e env · actions S i y D d R s P · 2-6 views · T theme · ?"
+			keys = "↑/↓ move · space fold workload · n fold namespace · N fold all · o sort · t flat · tab pane · e env · S i y D d R s P · T · ?"
 		default:
 			keys = "↑/↓ move · o sort · t tree · tab pane · e env · S i y D · d R s P · 2net 3events 4press 5nodes 6fwd · T theme · ?"
 		}
@@ -1170,8 +1203,9 @@ func helpLines() []string {
 		styHeader.Render("Pods list (focused)"),
 		styText.Render("  ↑/↓ pgup/pgdn g/G  move    / filter pods by name"),
 		styText.Render("  o  cycle sort: name → cpu → mem → restarts → age → status"),
-		styText.Render("  t  toggle tree view — group pods under their Deployment/DaemonSet/… (what depends on what)"),
-		styText.Render("  space  fold/unfold the selected group (in tree view)"),
+		styText.Render("  t  toggle tree view — namespace ▸ workload ▸ pod (what depends on what)"),
+		styText.Render("  space  fold/unfold the selected workload      n  fold/unfold its namespace"),
+		styText.Render("  N  fold/unfold every namespace at once — a one-screen map of the cluster"),
 		styText.Render("  S  open an interactive shell inside the selected container (exec -it)"),
 		styText.Render("  i  inspect: env, mounts, df, processes, ls /  (read-only)"),
 		styText.Render("  y  view live YAML        D  describe + recent events"),

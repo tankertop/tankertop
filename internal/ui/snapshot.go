@@ -91,6 +91,12 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 	case "collapse":
 		send("t")
 		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	case "nscollapse":
+		send("t")
+		send("n")
+	case "nscollapseall":
+		send("t")
+		send("N")
 	case "helpscroll":
 		send("?")
 		for i := 0; i < 3; i++ {

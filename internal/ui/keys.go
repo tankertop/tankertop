@@ -144,6 +144,21 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	case "n":
+		if m.tree {
+			if p, ok := m.selectedPod(); ok {
+				k := nsKey(p.Namespace)
+				m.collapsed[k] = !m.collapsed[k]
+				if m.collapsed[k] {
+					m.snapVisible()
+				}
+			}
+		}
+	case "N":
+		if m.tree {
+			m.setAllNamespacesCollapsed(m.anyNamespaceExpanded())
+			m.snapVisible()
+		}
 	case "t":
 		key := m.selectedKey()
 		m.tree = !m.tree

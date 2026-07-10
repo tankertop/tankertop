@@ -129,8 +129,10 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 |-----|--------|
 | `↑`/`↓` `PgUp`/`PgDn` `g`/`G` | move selection |
 | `o` | cycle sort: name → cpu → mem → restarts → age → status |
-| `t` | toggle tree view (group pods under their Deployment/DaemonSet/…) |
-| `space` | fold/unfold the selected group (tree view) |
+| `t` | toggle tree view: namespace ▸ workload ▸ pod |
+| `space` | fold/unfold the selected workload (tree view) |
+| `n` | fold/unfold the selected pod's namespace (tree view) |
+| `N` | fold/unfold every namespace — the whole cluster on one screen (tree view) |
 | `/` | filter by namespace/pod name |
 | `S` | open an interactive shell inside the selected container (`exec -it`) |
 | `i` | inspect: env, mounts, `df`, processes, `ls /` (read-only) |
@@ -173,6 +175,12 @@ Destructive/outward actions (`d`, `R`, `s`, `P`) always ask for confirmation fir
 The interactive shell and port-forward use the node's `microk8s kubectl`. `P` starts a
 **background** port-forward (binds `0.0.0.0` on the host); manage them in the `6` view
 (`x` stop selected, `X` stop all).
+
+**Tree view** (`t`) nests pods under the workload that owns them and the
+namespace that scopes them, with running totals on every node. Both levels fold:
+`space` collapses one workload, `n` one namespace, `N` all of them — so `t N`
+turns a 250-pod cluster into a one-screen summary. Sorting applies at each level,
+so `o` (cpu) puts the busiest namespace on top, then its busiest workload.
 
 **Views:** `5` shows per-node capacity/allocatable/requests/usage with pressure
 conditions and pod-slot saturation; `4` ranks pods by memory headroom and flags

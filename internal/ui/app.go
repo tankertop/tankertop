@@ -409,30 +409,35 @@ func (m *Model) applyFilter() {
 		m.rows = append(m.rows, p)
 	}
 	if m.tree {
-		// Aggregate per group so groups can be ordered by the active sort.
-		gCPU := map[string]int64{}
-		gMem := map[string]int64{}
+		// Aggregate per namespace and per group so both tree levels can be
+		// ordered by the active sort.
+		nsCPU, nsMem := map[string]int64{}, map[string]int64{}
+		gCPU, gMem := map[string]int64{}, map[string]int64{}
 		for _, p := range m.rows {
-			k := p.Namespace + "\x00" + p.Controller
+			nsCPU[p.Namespace] += p.CPUMilli
+			nsMem[p.Namespace] += p.MemBytes
+			k := groupKey(p)
 			gCPU[k] += p.CPUMilli
 			gMem[k] += p.MemBytes
 		}
-		groupMetric := func(p cluster.PodInfo) float64 {
-			k := p.Namespace + "\x00" + p.Controller
+		metric := func(cpu, mem map[string]int64, k string) float64 {
 			switch m.sort {
 			case sortCPU:
-				return float64(gCPU[k])
+				return float64(cpu[k])
 			case sortMem:
-				return float64(gMem[k])
+				return float64(mem[k])
 			}
 			return 0
 		}
 		sort.SliceStable(m.rows, func(i, j int) bool {
 			a, b := m.rows[i], m.rows[j]
 			if a.Namespace != b.Namespace {
+				if na, nb := metric(nsCPU, nsMem, a.Namespace), metric(nsCPU, nsMem, b.Namespace); na != nb {
+					return na > nb // busiest namespace first
+				}
 				return a.Namespace < b.Namespace
 			}
-			if ga, gb := groupMetric(a), groupMetric(b); ga != gb {
+			if ga, gb := metric(gCPU, gMem, groupKey(a)), metric(gCPU, gMem, groupKey(b)); ga != gb {
 				return ga > gb // bigger groups first
 			}
 			if a.Controller != b.Controller {
@@ -474,17 +479,44 @@ func podLess(a, b cluster.PodInfo, s sortMode) bool {
 
 func groupKey(p cluster.PodInfo) string { return p.Namespace + "\x00" + p.Controller }
 
-// visibleIndices lists rows that are currently shown (collapsed tree groups hide
+// nsKey names the namespace node of the tree. The \x00ns prefix keeps it from
+// ever colliding with a groupKey.
+func nsKey(ns string) string { return "\x00ns\x00" + ns }
+
+// hidden reports whether a pod is folded away behind a collapsed namespace or
+// a collapsed workload group.
+func (m Model) hidden(p cluster.PodInfo) bool {
+	return m.tree && (m.collapsed[nsKey(p.Namespace)] || m.collapsed[groupKey(p)])
+}
+
+// visibleIndices lists rows that are currently shown (collapsed tree nodes hide
 // their pods).
 func (m Model) visibleIndices() []int {
 	out := make([]int, 0, len(m.rows))
 	for i, p := range m.rows {
-		if m.tree && m.collapsed[groupKey(p)] {
+		if m.hidden(p) {
 			continue
 		}
 		out = append(out, i)
 	}
 	return out
+}
+
+// anyNamespaceExpanded reports whether at least one namespace in the filtered
+// rows is currently unfolded — it decides which way N toggles.
+func (m Model) anyNamespaceExpanded() bool {
+	for _, p := range m.rows {
+		if !m.collapsed[nsKey(p.Namespace)] {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) setAllNamespacesCollapsed(collapsed bool) {
+	for _, p := range m.rows {
+		m.collapsed[nsKey(p.Namespace)] = collapsed
+	}
 }
 
 // moveCursor moves the selection by delta steps over the visible rows.

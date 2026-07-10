@@ -164,6 +164,15 @@ func pad(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(r))
 }
 
+// padLeft right-aligns s in width columns, for numbers that share a column.
+func padLeft(s string, width int) string {
+	r := []rune(s)
+	if len(r) >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-len(r)) + s
+}
+
 // fit clips (ANSI-aware) and pads s to exactly width visible columns.
 // fit truncates s to exactly width display columns, padding with spaces. It is
 // the last gate every box body line passes through, so it also flattens

@@ -695,6 +695,19 @@ func (m Model) namespaceLines(inner, rows int) []string {
 	}
 	sort.Slice(names, func(i, j int) bool { return byNS[names[i]].cpu > byNS[names[j]].cpu })
 
+	// Size the counts column to the widest one on screen: a namespace with 207
+	// pods is three characters wider than one with 5, and a %2d minimum width
+	// would let it push every bar to its right out of alignment.
+	counts := make(map[string]string, len(names))
+	countW := 0
+	for _, n := range names {
+		c := fmt.Sprintf("%d/%d", byNS[n].running, byNS[n].pods)
+		counts[n] = c
+		if len(c) > countW {
+			countW = len(c)
+		}
+	}
+
 	cpuCap, memCap := m.clusterCaps()
 	lines := make([]string, 0, rows)
 	for _, n := range names {
@@ -709,9 +722,9 @@ func (m Model) namespaceLines(inner, rows int) []string {
 		if memCap > 0 {
 			mf = float64(a.mem) / float64(memCap)
 		}
-		lines = append(lines, fmt.Sprintf("%s %s   %s cpu %s %s   %s mem %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s pods   %s cpu %s %s   %s mem %s %s",
 			styText.Render(pad(n, 16)),
-			styDim.Render(fmt.Sprintf("%2d/%-2d pods", a.running, a.pods)),
+			styDim.Render(padLeft(counts[n], countW)),
 			styDim.Render("│"), miniMeter(cf, 16), styDim.Render(pad(humanCPU(a.cpu), 7)),
 			styDim.Render("│"), miniMeter(mf, 16), styDim.Render(pad(humanBytes(a.mem), 7)),
 		))

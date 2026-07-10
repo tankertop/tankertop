@@ -255,72 +255,19 @@ func (m Model) refCPU() float64 {
 	return ref
 }
 
-// treeLines renders pods grouped Namespace ▸ Controller ▸ Pod.
+// treeLines renders the tree rows: Namespace ▸ Workload ▸ Pod.
 func (m Model) treeLines(inner, rows int) []string {
 	if rows < 1 {
 		rows = 1
 	}
-	type drow struct {
-		text string
-		pod  int // index into m.rows, or -1 for a header
-	}
-	var disp []drow
+	disp := m.treeRows()
+	sel := m.treeIndex()
+	refCPU := m.refCPU()
 
-	refCPU := 1.0
-	for _, p := range m.rows {
-		if float64(p.CPUMilli) > refCPU {
-			refCPU = float64(p.CPUMilli)
-		}
-	}
-
-	lastNS, lastCtl := "\x00", "\x00"
-	for idx, p := range m.rows {
-		if p.Namespace != lastNS {
-			nsPods, nsReady, nsCPU, nsMem, workloads := nsAgg(m.rows, p.Namespace)
-			caret := "▾"
-			if m.collapsed[nsKey(p.Namespace)] {
-				caret = "▸"
-			}
-			disp = append(disp, drow{
-				styDim.Render(caret) + " " + styHeader.Render(p.Namespace) +
-					styDim.Render(fmt.Sprintf("  (%d workload%s, %d pod%s, %d ready)  cpu %s  mem %s",
-						workloads, plural(workloads), nsPods, plural(nsPods), nsReady,
-						humanCPU(nsCPU), humanBytes(nsMem))), -1})
-			lastNS, lastCtl = p.Namespace, "\x00"
-		}
-		if m.collapsed[nsKey(p.Namespace)] {
-			continue // whole namespace folded away
-		}
-		if p.Controller != lastCtl {
-			cnt, ready, cpu, mem := groupAgg(m.rows, p.Namespace, p.Controller)
-			caret := "▾"
-			if m.collapsed[groupKey(p)] {
-				caret = "▸"
-			}
-			disp = append(disp, drow{
-				"  " + styDim.Render(caret) + " " +
-					lipgloss.NewStyle().Foreground(colMagenta).Render(p.Controller) +
-					styDim.Render(fmt.Sprintf("  (%d pod%s, %d ready)  cpu %s  mem %s",
-						cnt, plural(cnt), ready, humanCPU(cpu), humanBytes(mem))), -1})
-			lastCtl = p.Controller
-		}
-		if m.collapsed[groupKey(p)] {
-			continue // hidden pod in a collapsed group
-		}
-		disp = append(disp, drow{m.treePodRow(p, idx == m.cursor, inner, refCPU), idx})
-	}
-
-	// window so the selected pod stays visible
-	selDisp := 0
-	for i, d := range disp {
-		if d.pod == m.cursor {
-			selDisp = i
-			break
-		}
-	}
+	// window so the selected row stays visible
 	start := 0
-	if selDisp >= rows {
-		start = selDisp - rows + 1
+	if sel >= rows {
+		start = sel - rows + 1
 	}
 	end := start + rows
 	if end > len(disp) {
@@ -328,9 +275,42 @@ func (m Model) treeLines(inner, rows int) []string {
 	}
 	out := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
-		out = append(out, disp[i].text)
+		out = append(out, m.treeRowLine(disp[i], i == sel, inner, refCPU))
 	}
 	return out
+}
+
+func (m Model) treeRowLine(r treeRow, selected bool, inner int, refCPU float64) string {
+	p := m.rows[r.pod]
+	switch r.kind {
+	case rowNS:
+		pods, ready, cpu, mem, workloads := nsAgg(m.rows, p.Namespace)
+		meta := fmt.Sprintf("  (%d workload%s, %d pod%s, %d ready)  cpu %s  mem %s",
+			workloads, plural(workloads), pods, plural(pods), ready, humanCPU(cpu), humanBytes(mem))
+		if selected {
+			return stySelect.Render(fit(caretFor(m.collapsed[r.key])+" "+p.Namespace+meta, inner))
+		}
+		return styDim.Render(caretFor(m.collapsed[r.key])) + " " +
+			styHeader.Render(p.Namespace) + styDim.Render(meta)
+
+	case rowGroup:
+		cnt, ready, cpu, mem := groupAgg(m.rows, p.Namespace, p.Controller)
+		meta := fmt.Sprintf("  (%d pod%s, %d ready)  cpu %s  mem %s",
+			cnt, plural(cnt), ready, humanCPU(cpu), humanBytes(mem))
+		if selected {
+			return "  " + stySelect.Render(fit(caretFor(m.collapsed[r.key])+" "+p.Controller+meta, inner-2))
+		}
+		return "  " + styDim.Render(caretFor(m.collapsed[r.key])) + " " +
+			lipgloss.NewStyle().Foreground(colMagenta).Render(p.Controller) + styDim.Render(meta)
+	}
+	return m.treePodRow(p, selected, inner, refCPU)
+}
+
+func caretFor(collapsed bool) string {
+	if collapsed {
+		return "▸"
+	}
+	return "▾"
 }
 
 func (m Model) treePodRow(p cluster.PodInfo, selected bool, inner int, refCPU float64) string {
@@ -1160,7 +1140,7 @@ func (m Model) renderFooter() string {
 		case m.focus == focusPane:
 			keys = "LOGS  ↑/↓ scroll · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
 		case m.tree:
-			keys = "↑/↓ move · space fold workload · n fold namespace · N fold all · o sort · t flat · tab pane · e env · S i y D d R s P · T · ?"
+			keys = "↑/↓ move (rows & headers) · space fold/unfold · n namespace · N all · o sort · t flat · tab pane · e env · S i y D d R s P · ?"
 		default:
 			keys = "↑/↓ move · o sort · t tree · tab pane · e env · S i y D · d R s P · 2net 3events 4press 5nodes 6fwd · T theme · ?"
 		}
@@ -1204,8 +1184,10 @@ func helpLines() []string {
 		styText.Render("  ↑/↓ pgup/pgdn g/G  move    / filter pods by name"),
 		styText.Render("  o  cycle sort: name → cpu → mem → restarts → age → status"),
 		styText.Render("  t  toggle tree view — namespace ▸ workload ▸ pod (what depends on what)"),
-		styText.Render("  space  fold/unfold the selected workload      n  fold/unfold its namespace"),
-		styText.Render("  N  fold/unfold every namespace at once — a one-screen map of the cluster"),
+		styDim.Render("     ↑/↓ walk every row, headers included; a folded node stays selected so space reopens it"),
+		styText.Render("  space  fold/unfold the node under the cursor (on a pod: its workload)"),
+		styText.Render("  n  fold/unfold the namespace     N  fold/unfold every namespace at once"),
+		styDim.Render("     pod actions (S i y D d R s P) need a pod row, not a header"),
 		styText.Render("  S  open an interactive shell inside the selected container (exec -it)"),
 		styText.Render("  i  inspect: env, mounts, df, processes, ls /  (read-only)"),
 		styText.Render("  y  view live YAML        D  describe + recent events"),

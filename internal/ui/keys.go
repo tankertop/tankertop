@@ -117,47 +117,49 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.envReveal = !m.envReveal
 		}
 	case "up", "k":
-		m.moveCursor(-1)
+		m.move(-1)
 		return m.onSelectionChange()
 	case "down", "j":
-		m.moveCursor(1)
+		m.move(1)
 		return m.onSelectionChange()
 	case "pgup":
-		m.moveCursor(-m.podPageSize())
+		m.move(-m.podPageSize())
 		return m.onSelectionChange()
 	case "pgdown":
-		m.moveCursor(m.podPageSize())
+		m.move(m.podPageSize())
 		return m.onSelectionChange()
 	case "g", "home":
-		m.cursorToEdge(true)
+		m.toEdge(true)
 		return m.onSelectionChange()
 	case "G", "end":
-		m.cursorToEdge(false)
+		m.toEdge(false)
 		return m.onSelectionChange()
 	case " ", "z":
-		if m.tree {
-			if p, ok := m.selectedPod(); ok {
-				k := groupKey(p)
-				m.collapsed[k] = !m.collapsed[k]
-				if m.collapsed[k] {
-					m.snapVisible()
-				}
+		// Fold the node under the cursor. On a pod, fold the workload holding it
+		// and select that workload, so space folds and unfolds symmetrically.
+		if r, ok := m.currentTreeRow(); ok && m.tree {
+			switch r.kind {
+			case rowPod:
+				m.foldNode(groupKey(m.rows[r.pod]))
+			default:
+				m.foldNode(r.key)
 			}
+			return m.onSelectionChange()
 		}
 	case "n":
-		if m.tree {
-			if p, ok := m.selectedPod(); ok {
-				k := nsKey(p.Namespace)
-				m.collapsed[k] = !m.collapsed[k]
-				if m.collapsed[k] {
-					m.snapVisible()
-				}
-			}
+		if r, ok := m.currentTreeRow(); ok && m.tree {
+			m.foldNode(nsKey(m.rows[r.pod].Namespace))
+			return m.onSelectionChange()
 		}
 	case "N":
 		if m.tree {
-			m.setAllNamespacesCollapsed(m.anyNamespaceExpanded())
-			m.snapVisible()
+			collapsing := m.anyNamespaceExpanded()
+			if r, ok := m.currentTreeRow(); ok && collapsing {
+				m.treeSel = nsKey(m.rows[r.pod].Namespace) // land on a row that stays
+			}
+			m.setAllNamespacesCollapsed(collapsing)
+			m.syncCursor()
+			return m.onSelectionChange()
 		}
 	case "t":
 		key := m.selectedKey()
@@ -178,41 +180,43 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusPane
 	// actions on the selected pod
 	case "S":
-		if p, ok := m.selectedPod(); ok && len(p.Containers) > 0 {
+		if p, ok := m.actionPod(); ok && len(p.Containers) > 0 {
 			return m, shellCmd(p, m.selectedContainer())
 		}
 	case "i":
-		if p, ok := m.selectedPod(); ok && len(p.Containers) > 0 {
+		if p, ok := m.actionPod(); ok && len(p.Containers) > 0 {
 			return m, m.inspectCmd(p, m.selectedContainer())
 		}
 	case "y":
-		if p, ok := m.selectedPod(); ok {
+		if p, ok := m.actionPod(); ok {
 			return m, m.yamlCmd(p)
 		}
 	case "D":
-		if p, ok := m.selectedPod(); ok {
+		if p, ok := m.actionPod(); ok {
 			return m, m.describeCmd(p)
 		}
 	case "d":
-		if p, ok := m.selectedPod(); ok {
+		if p, ok := m.actionPod(); ok {
 			m.modal = &modalState{kind: mDelete, pod: p,
 				prompt: "Delete pod " + p.Name + "?"}
 		}
 	case "R":
-		if p, ok := m.selectedPod(); ok {
+		if p, ok := m.actionPod(); ok {
 			m.modal = &modalState{kind: mRestart, pod: p,
 				prompt: "Restart workload behind " + p.Name + "?"}
 		}
 	case "s":
-		if p, ok := m.selectedPod(); ok {
+		if p, ok := m.actionPod(); ok {
 			return m, m.scaleInfoCmd(p)
 		}
 	case "P":
-		if p, ok := m.selectedPod(); ok && len(p.ContainerPorts) > 0 {
-			m.modal = &modalState{kind: mPortFwd, pod: p,
-				prompt: portFwdPrompt(p)}
-		} else {
+		p, ok := m.actionPod()
+		switch {
+		case !ok:
+		case len(p.ContainerPorts) == 0:
 			m.status = "no container ports declared on this pod"
+		default:
+			m.modal = &modalState{kind: mPortFwd, pod: p, prompt: portFwdPrompt(p)}
 		}
 	}
 	return m, nil
@@ -324,6 +328,36 @@ func (m Model) handleEnvPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// move and toEdge dispatch to the tree's node navigation or the flat list's.
+func (m *Model) move(delta int) {
+	if m.tree {
+		m.moveTree(delta)
+		return
+	}
+	m.moveCursor(delta)
+}
+
+func (m *Model) toEdge(top bool) {
+	if m.tree {
+		m.treeToEdge(top)
+		return
+	}
+	m.cursorToEdge(top)
+}
+
+// actionPod is the pod a pod action applies to. The panes happily follow a
+// header row to the first pod beneath it, but deleting or restarting that pod
+// because the cursor was on its namespace would be a nasty surprise.
+func (m *Model) actionPod() (cluster.PodInfo, bool) {
+	if m.tree {
+		if r, ok := m.currentTreeRow(); !ok || r.kind != rowPod {
+			m.status = "select a pod — this row is a namespace or a workload"
+			return cluster.PodInfo{}, false
+		}
+	}
+	return m.selectedPod()
 }
 
 // onSelectionChange resets the bottom-right pane for the newly selected pod.
@@ -468,20 +502,25 @@ func (m Model) handleLogSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) selectedKey() string {
 	if p, ok := m.selectedPod(); ok {
-		return p.Namespace + "/" + p.Name
+		return podKey(p)
 	}
 	return ""
 }
 
+// reselect restores the selection on the same pod after a re-sort or a
+// flat/tree switch. A pod row's tree key is its pod key, so one lookup does both.
 func (m *Model) reselect(key string) {
 	if key == "" {
 		return
 	}
 	for i, p := range m.rows {
-		if p.Namespace+"/"+p.Name == key {
+		if podKey(p) == key {
 			m.cursor = i
-			return
+			break
 		}
+	}
+	if m.tree {
+		m.treeSel = key
 	}
 }
 

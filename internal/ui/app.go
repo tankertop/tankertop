@@ -102,6 +102,7 @@ type Model struct {
 	cursor    int
 	offset    int
 	tree      bool
+	treeSel   string // key of the selected tree row (namespace, workload or pod)
 	sort      sortMode
 	collapsed map[string]bool
 
@@ -483,23 +484,113 @@ func groupKey(p cluster.PodInfo) string { return p.Namespace + "\x00" + p.Contro
 // ever colliding with a groupKey.
 func nsKey(ns string) string { return "\x00ns\x00" + ns }
 
-// hidden reports whether a pod is folded away behind a collapsed namespace or
-// a collapsed workload group.
-func (m Model) hidden(p cluster.PodInfo) bool {
-	return m.tree && (m.collapsed[nsKey(p.Namespace)] || m.collapsed[groupKey(p)])
+func podKey(p cluster.PodInfo) string { return p.Namespace + "/" + p.Name }
+
+type treeRowKind int
+
+const (
+	rowNS treeRowKind = iota
+	rowGroup
+	rowPod
+)
+
+// treeRow is one displayed line of the tree. Every row is selectable, including
+// the namespace and workload headers — otherwise folding a node would make it
+// impossible to select, and so impossible to unfold.
+type treeRow struct {
+	kind treeRowKind
+	key  string // nsKey / groupKey / podKey — stable across refreshes
+	pod  int    // index into m.rows; for a header, the first pod beneath it
 }
 
-// visibleIndices lists rows that are currently shown (collapsed tree nodes hide
-// their pods).
-func (m Model) visibleIndices() []int {
-	out := make([]int, 0, len(m.rows))
+// treeRows is the single source of truth for what the tree displays: the
+// renderer draws these rows and the keys navigate them.
+func (m Model) treeRows() []treeRow {
+	out := make([]treeRow, 0, len(m.rows))
+	lastNS, lastCtl := "\x00", "\x00"
 	for i, p := range m.rows {
-		if m.hidden(p) {
+		if p.Namespace != lastNS {
+			out = append(out, treeRow{rowNS, nsKey(p.Namespace), i})
+			lastNS, lastCtl = p.Namespace, "\x00"
+		}
+		if m.collapsed[nsKey(p.Namespace)] {
 			continue
 		}
-		out = append(out, i)
+		if p.Controller != lastCtl {
+			out = append(out, treeRow{rowGroup, groupKey(p), i})
+			lastCtl = p.Controller
+		}
+		if m.collapsed[groupKey(p)] {
+			continue
+		}
+		out = append(out, treeRow{rowPod, podKey(p), i})
 	}
 	return out
+}
+
+// treeIndex locates the selected row. Selection is stored as a key rather than
+// an index so it survives pods coming and going between refreshes.
+func (m Model) treeIndex() int {
+	for i, r := range m.treeRows() {
+		if r.key == m.treeSel {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m Model) currentTreeRow() (treeRow, bool) {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return treeRow{}, false
+	}
+	return rows[m.treeIndex()], true
+}
+
+// syncCursor points m.cursor at the pod the selected node stands for, so the
+// detail, logs and env panes keep working while the cursor sits on a header.
+func (m *Model) syncCursor() {
+	if r, ok := m.currentTreeRow(); ok {
+		m.cursor = r.pod
+	}
+}
+
+// moveTree walks the displayed tree rows, headers included.
+func (m *Model) moveTree(delta int) {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return
+	}
+	i := m.treeIndex() + delta
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(rows) {
+		i = len(rows) - 1
+	}
+	m.treeSel, m.cursor = rows[i].key, rows[i].pod
+}
+
+func (m *Model) treeToEdge(top bool) {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return
+	}
+	r := rows[0]
+	if !top {
+		r = rows[len(rows)-1]
+	}
+	m.treeSel, m.cursor = r.key, r.pod
+}
+
+// foldNode toggles a node. When it folds, the selection lands on the node
+// itself — the row that is still on screen — so the same key unfolds it.
+func (m *Model) foldNode(key string) {
+	m.collapsed[key] = !m.collapsed[key]
+	if m.collapsed[key] {
+		m.treeSel = key
+	}
+	m.syncCursor()
 }
 
 // anyNamespaceExpanded reports whether at least one namespace in the filtered
@@ -519,58 +610,28 @@ func (m *Model) setAllNamespacesCollapsed(collapsed bool) {
 	}
 }
 
-// moveCursor moves the selection by delta steps over the visible rows.
+// moveCursor moves the selection by delta rows (flat list).
 func (m *Model) moveCursor(delta int) {
-	vis := m.visibleIndices()
-	if len(vis) == 0 {
+	if len(m.rows) == 0 {
 		return
 	}
-	pos := 0
-	for k, idx := range vis {
-		if idx == m.cursor {
-			pos = k
-			break
-		}
-		if idx > m.cursor { // current row hidden: snap here
-			pos = k
-			break
-		}
+	m.cursor += delta
+	if m.cursor < 0 {
+		m.cursor = 0
 	}
-	pos += delta
-	if pos < 0 {
-		pos = 0
+	if m.cursor >= len(m.rows) {
+		m.cursor = len(m.rows) - 1
 	}
-	if pos >= len(vis) {
-		pos = len(vis) - 1
-	}
-	m.cursor = vis[pos]
 }
 
 func (m *Model) cursorToEdge(top bool) {
-	vis := m.visibleIndices()
-	if len(vis) == 0 {
+	if len(m.rows) == 0 {
 		return
 	}
-	if top {
-		m.cursor = vis[0]
-	} else {
-		m.cursor = vis[len(vis)-1]
+	m.cursor = 0
+	if !top {
+		m.cursor = len(m.rows) - 1
 	}
-}
-
-// snapVisible ensures the cursor sits on a visible row after a collapse.
-func (m *Model) snapVisible() {
-	vis := m.visibleIndices()
-	if len(vis) == 0 {
-		return
-	}
-	for _, idx := range vis {
-		if idx >= m.cursor {
-			m.cursor = idx
-			return
-		}
-	}
-	m.cursor = vis[len(vis)-1]
 }
 
 // bodyHeight is the screen height available above the footer.

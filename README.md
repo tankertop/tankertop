@@ -130,8 +130,8 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 | `↑`/`↓` `PgUp`/`PgDn` `g`/`G` | move selection |
 | `o` | cycle sort: name → cpu → mem → restarts → age → status |
 | `t` | toggle tree view: namespace ▸ workload ▸ pod |
-| `space` | fold/unfold the selected workload (tree view) |
-| `n` | fold/unfold the selected pod's namespace (tree view) |
+| `space` | fold/unfold the node under the cursor (tree view) |
+| `n` | fold/unfold the namespace (tree view) |
 | `N` | fold/unfold every namespace — the whole cluster on one screen (tree view) |
 | `/` | filter by namespace/pod name |
 | `S` | open an interactive shell inside the selected container (`exec -it`) |
@@ -177,10 +177,13 @@ The interactive shell and port-forward use the node's `microk8s kubectl`. `P` st
 (`x` stop selected, `X` stop all).
 
 **Tree view** (`t`) nests pods under the workload that owns them and the
-namespace that scopes them, with running totals on every node. Both levels fold:
-`space` collapses one workload, `n` one namespace, `N` all of them — so `t N`
-turns a 250-pod cluster into a one-screen summary. Sorting applies at each level,
-so `o` (cpu) puts the busiest namespace on top, then its busiest workload.
+namespace that scopes them, with running totals on every node. `↑`/`↓` walk every
+row, headers included, and `space` folds or unfolds whichever node the cursor is
+on — a folded node keeps the selection, so the same key reopens it. `n` folds a
+namespace, `N` folds them all, turning a 250-pod cluster into a one-screen
+summary. Sorting applies at each level, so `o` (cpu) puts the busiest namespace
+on top, then its busiest workload. Pod actions (`S i y D d R s P`) need a pod
+row; on a header they refuse rather than act on some arbitrary pod beneath it.
 
 **Views:** `5` shows per-node capacity/allocatable/requests/usage with pressure
 conditions and pod-slot saturation; `4` ranks pods by memory headroom and flags

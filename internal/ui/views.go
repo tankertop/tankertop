@@ -573,12 +573,22 @@ func (m Model) buildEnvLines(inner int) []string {
 // unless the user asked to reveal them.
 func envAssign(name, value string, reveal bool) string {
 	if !reveal && looksSecret(name, value) {
-		value = "••••••••"
 		return lipgloss.NewStyle().Foreground(colCyan).Render(name) +
-			styDim.Render("=") + lipgloss.NewStyle().Foreground(colYellow).Render(value)
+			styDim.Render("=") + lipgloss.NewStyle().Foreground(colYellow).Render("••••••••")
 	}
 	return lipgloss.NewStyle().Foreground(colCyan).Render(name) +
-		styDim.Render("=") + styText.Render(value)
+		styDim.Render("=") + styText.Render(escapeCtl(value))
+}
+
+var ctlEscaper = strings.NewReplacer("\n", `\n`, "\r", `\r`, "\t", `\t`)
+
+// escapeCtl makes line breaks in an env value visible rather than letting them
+// silently vanish — a trailing \n in a manifest is usually a YAML accident.
+func escapeCtl(s string) string {
+	if !strings.ContainsAny(s, "\n\r\t") {
+		return s
+	}
+	return ctlEscaper.Replace(s)
 }
 
 var secretNameHints = []string{"PASS", "SECRET", "TOKEN", "CRED", "DSN", "SALT", "PRIVATE"}

@@ -65,10 +65,12 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 		send("5")
 	case "forwards":
 		send("6")
-	case "env", "envreveal", "envscroll":
-		// move to a pod with a rich spec env (demo order: web, web, api, …)
-		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
-		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	case "env", "envreveal", "envscroll", "envtop":
+		if mode != "envtop" {
+			// move to a pod with a rich spec env (demo order: web, web, api, …)
+			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
+			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
+		}
 		send("e")
 		if mode == "envreveal" {
 			send("m")

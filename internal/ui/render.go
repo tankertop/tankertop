@@ -165,15 +165,33 @@ func pad(s string, width int) string {
 }
 
 // fit clips (ANSI-aware) and pads s to exactly width visible columns.
+// fit truncates s to exactly width display columns, padding with spaces. It is
+// the last gate every box body line passes through, so it also flattens
+// newlines and tabs: MaxWidth truncates each line but keeps the line breaks, and
+// a body line that renders as two rows makes its box one row too tall — which
+// silently pushes everything below it off the bottom of the screen. Pod specs
+// really do contain env values with trailing newlines.
 func fit(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+	s = flatten(s)
 	s = lipgloss.NewStyle().MaxWidth(width).Render(s)
 	if w := lipgloss.Width(s); w < width {
 		s += strings.Repeat(" ", width-w)
 	}
 	return s
+}
+
+var lineBreaks = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
+
+// flatten collapses anything that would start a new terminal row. ANSI escapes
+// are left alone.
+func flatten(s string) string {
+	if !strings.ContainsAny(s, "\n\r\t") {
+		return s
+	}
+	return lineBreaks.Replace(s)
 }
 
 // brailleDots[inCell][side] gives the braille bit for a dot at vertical

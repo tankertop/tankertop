@@ -31,7 +31,15 @@ type focusKind int
 
 const (
 	focusPods focusKind = iota
-	focusLogs
+	focusPane
+)
+
+// paneMode selects what the bottom-right pane shows for the selected container.
+type paneMode int
+
+const (
+	paneLogs paneMode = iota
+	paneEnv
 )
 
 type sortMode int
@@ -106,7 +114,8 @@ type Model struct {
 	nodeMEM map[string][]float64
 	podCPU  map[string][]float64
 
-	// logs pane
+	// bottom-right pane (logs or env)
+	pane         paneMode
 	selContainer int
 	logBuf       []string
 	logTitle     string
@@ -117,6 +126,14 @@ type Model struct {
 	logPrevious  bool
 	logSearch    string
 	logSearching bool
+
+	// env pane: runtime env read out of the container, plus the spec env
+	envScroll  int
+	envRuntime []string
+	envKey     string // pod/container the runtime env belongs to
+	envErr     error
+	envLoading bool
+	envReveal  bool // show secret-looking values instead of masking them
 
 	// text view (yaml/describe/inspect/help)
 	textTitle  string
@@ -153,6 +170,11 @@ type logsMsg struct {
 	key, title, body string
 	err              error
 	focusLogs        bool
+}
+type envMsg struct {
+	key  string
+	body string
+	err  error
 }
 type actionResultMsg struct {
 	note string
@@ -242,6 +264,31 @@ func (m Model) logsCmd(focus bool) tea.Cmd {
 			title:     p.Name + " [" + container + "]" + tag,
 			body:      body, err: err, focusLogs: focus,
 		}
+	}
+}
+
+// paneKey identifies the selected container; the runtime env is cached against it.
+func (m Model) paneKey() string {
+	p, ok := m.selectedPod()
+	if !ok {
+		return ""
+	}
+	return p.Namespace + "/" + p.Name + "/" + m.selectedContainer()
+}
+
+// envCmd execs `env` in the selected container. Unlike logs it is not refreshed
+// on every tick — an exec per refresh would hammer the API server.
+func (m Model) envCmd() tea.Cmd {
+	p, ok := m.selectedPod()
+	if !ok || len(p.Containers) == 0 {
+		return nil
+	}
+	container, key, c := m.selectedContainer(), m.paneKey(), m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		body, err := c.RuntimeEnv(ctx, p.Namespace, p.Name, container)
+		return envMsg{key: key, body: body, err: err}
 	}
 }
 
@@ -522,6 +569,29 @@ func (m Model) dashLayout(bodyH int) (clusterH, nsH, midH, leftW, rightW int) {
 	return
 }
 
+// paneInnerWidth is the text width inside the bottom-right pane.
+func (m Model) paneInnerWidth() int {
+	_, _, _, _, rightW := m.dashLayout(m.bodyHeight())
+	if rightW < 4 {
+		return 1
+	}
+	return rightW - 2
+}
+
+// panePageSize is the number of rows visible in the bottom-right pane.
+func (m Model) panePageSize() int {
+	_, _, midH, _, _ := m.dashLayout(m.bodyHeight())
+	detailH := 6
+	if midH < 14 {
+		detailH = midH / 2
+	}
+	p := midH - detailH - 2
+	if p < 1 {
+		p = 1
+	}
+	return p
+}
+
 // podPageSize is the number of pod rows visible in the list (for PgUp/PgDn).
 func (m Model) podPageSize() int {
 	_, _, midH, _, _ := m.dashLayout(m.bodyHeight())
@@ -562,8 +632,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logScroll = 0
 		}
 		if msg.focusLogs {
-			m.focus = focusLogs
+			m.focus = focusPane
 		}
+		return m, nil
+
+	case envMsg:
+		if msg.key != m.paneKey() {
+			return m, nil // selection moved on while the exec was in flight
+		}
+		m.envLoading = false
+		m.envErr = msg.err
+		m.envRuntime = nil
+		if body := strings.TrimRight(msg.body, "\n"); body != "" {
+			m.envRuntime = strings.Split(body, "\n")
+		}
+		m.envKey = msg.key
 		return m, nil
 
 	case actionResultMsg:

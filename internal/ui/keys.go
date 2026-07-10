@@ -94,62 +94,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Logs pane focused: scroll & log controls.
-	if m.focus == focusLogs {
-		switch msg.String() {
-		case "tab", "esc":
-			m.focus = focusPods
-		case "up", "k":
-			m.logScroll++
-			m.logFollow = false
-		case "down", "j":
-			if m.logScroll > 0 {
-				m.logScroll--
-			}
-		case "pgup":
-			m.logScroll += 10
-			m.logFollow = false
-		case "pgdown":
-			m.logScroll -= 10
-			if m.logScroll < 0 {
-				m.logScroll = 0
-			}
-		case "g", "home":
-			m.logScroll = 1 << 30
-			m.logFollow = false
-		case "G", "end":
-			m.logScroll = 0
-			m.logFollow = true
-		case "f":
-			m.logFollow = !m.logFollow
-			if m.logFollow {
-				m.logScroll = 0
-			}
-		case "w":
-			m.logWrap = !m.logWrap
-		case "p":
-			m.logPrevious = !m.logPrevious
-			return m, m.logsCmd(false)
-		case "[":
-			m = m.cycleContainer(-1)
-			return m, m.logsCmd(false)
-		case "]":
-			m = m.cycleContainer(1)
-			return m, m.logsCmd(false)
-		case "/":
-			m.logSearching = true
-			m.logSearch = ""
-		case "q", "ctrl+c":
-			m.saveConfig()
-			return m, tea.Quit
+	// Bottom-right pane focused: scroll & per-mode controls.
+	if m.focus == focusPane {
+		if msg.String() == "e" {
+			return m.togglePane()
 		}
-		return m, nil
+		if m.pane == paneEnv {
+			return m.handleEnvPaneKey(msg)
+		}
+		return m.handleLogPaneKey(msg)
 	}
 
 	// Pods pane focused.
 	switch msg.String() {
 	case "tab":
-		m.focus = focusLogs
+		m.focus = focusPane
+	case "e":
+		return m.togglePane()
+	case "m":
+		// mask/reveal belongs to the env pane, but it is visible from here too
+		if m.pane == paneEnv {
+			m.envReveal = !m.envReveal
+		}
 	case "up", "k":
 		m.moveCursor(-1)
 		return m.onSelectionChange()
@@ -194,7 +160,7 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.filtering, m.filter = true, ""
 	case "enter":
-		m.focus = focusLogs
+		m.focus = focusPane
 	// actions on the selected pod
 	case "S":
 		if p, ok := m.selectedPod(); ok && len(p.Containers) > 0 {
@@ -237,13 +203,126 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// onSelectionChange resets the logs pane for the newly selected pod.
+// togglePane switches the bottom-right pane between logs and env, fetching the
+// runtime env the first time it is needed for this container.
+func (m Model) togglePane() (tea.Model, tea.Cmd) {
+	if m.pane == paneLogs {
+		m.pane = paneEnv
+		m.envScroll = 0
+		cmd := m.refreshEnv()
+		return m, cmd
+	}
+	m.pane = paneLogs
+	return m, nil
+}
+
+// refreshEnv fetches the runtime env unless it is already cached for the
+// selected container.
+func (m *Model) refreshEnv() tea.Cmd {
+	key := m.paneKey()
+	if key == "" || (m.envKey == key && m.envErr == nil) {
+		return nil
+	}
+	m.envLoading = true
+	m.envRuntime, m.envErr = nil, nil
+	return m.envCmd()
+}
+
+func (m Model) handleLogPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	page := m.panePageSize()
+	switch msg.String() {
+	case "tab", "esc":
+		m.focus = focusPods
+	case "up", "k":
+		m.logScroll++
+		m.logFollow = false
+	case "down", "j":
+		if m.logScroll > 0 {
+			m.logScroll--
+		}
+	case "pgup":
+		m.logScroll += page
+		m.logFollow = false
+	case "pgdown":
+		m.logScroll -= page
+		if m.logScroll < 0 {
+			m.logScroll = 0
+		}
+	case "g", "home":
+		m.logScroll = 1 << 30
+		m.logFollow = false
+	case "G", "end":
+		m.logScroll = 0
+		m.logFollow = true
+	case "f":
+		m.logFollow = !m.logFollow
+		if m.logFollow {
+			m.logScroll = 0
+		}
+	case "w":
+		m.logWrap = !m.logWrap
+	case "p":
+		m.logPrevious = !m.logPrevious
+		return m, m.logsCmd(false)
+	case "[":
+		m = m.cycleContainer(-1)
+		return m, m.logsCmd(false)
+	case "]":
+		m = m.cycleContainer(1)
+		return m, m.logsCmd(false)
+	case "/":
+		m.logSearching = true
+		m.logSearch = ""
+	case "q", "ctrl+c":
+		m.saveConfig()
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleEnvPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	last := len(m.buildEnvLines(m.paneInnerWidth())) - m.panePageSize()
+	if last < 0 {
+		last = 0
+	}
+	m.handleScrollKey(msg, &m.envScroll, last)
+	switch msg.String() {
+	case "tab", "esc":
+		m.focus = focusPods
+	case "m":
+		m.envReveal = !m.envReveal
+	case "R":
+		m.envKey = "" // force a re-exec
+		cmd := m.refreshEnv()
+		return m, cmd
+	case "[", "]":
+		delta := 1
+		if msg.String() == "[" {
+			delta = -1
+		}
+		m = m.cycleContainer(delta)
+		m.envScroll, m.envKey = 0, ""
+		cmd := m.refreshEnv()
+		return m, tea.Batch(cmd, m.logsCmd(false))
+	case "q", "ctrl+c":
+		m.saveConfig()
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// onSelectionChange resets the bottom-right pane for the newly selected pod.
 func (m Model) onSelectionChange() (tea.Model, tea.Cmd) {
 	m.selContainer = 0
 	m.logScroll = 0
 	m.logFollow = true
 	m.logPrevious = false
-	return m, m.logsCmd(false)
+	m.envScroll = 0
+	cmds := []tea.Cmd{m.logsCmd(false)}
+	if m.pane == paneEnv {
+		cmds = append(cmds, m.refreshEnv())
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) cycleContainer(delta int) Model {

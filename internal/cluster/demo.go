@@ -3,6 +3,8 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -102,6 +104,7 @@ func DemoSnapshot(tick int) Snapshot {
 			Name: cname, Image: s.image, Ready: s.ready == s.total && s.total > 0,
 			State: state, Reason: reason, Restarts: s.restarts,
 			CPUMilli: cpu, MemBytes: s.memMB * mib,
+			Env: demoDeclaredEnv(s.name), EnvFrom: demoEnvSources(s.name),
 		}}
 		snap.Pods = append(snap.Pods, pi)
 		nsSet[s.ns] = struct{}{}
@@ -157,6 +160,130 @@ func demoEvents() []EventInfo {
 		{"Warning", "Unhealthy", "monitoring", "Pod/loki-0", "Readiness probe failed: HTTP probe failed with statuscode: 503", 3, 6 * time.Minute},
 		{"Normal", "Completed", "default", "Job/db-migrate", "Job completed", 1, 51 * time.Minute},
 	}
+}
+
+// demoDeclaredEnv gives a few pods a plausible spec env, covering every source
+// kind (literal, configMap, secret, downward API) so the env pane has something
+// to show in `--demo`. Keyed on the pod-name prefix, since demo container names
+// still carry the ReplicaSet hash.
+func demoDeclaredEnv(pod string) []EnvVar {
+	common := []EnvVar{
+		{Name: "NODE_NAME", From: "field spec.nodeName"},
+		{Name: "POD_IP", From: "field status.podIP"},
+	}
+	switch demoApp(pod) {
+	case "api":
+		return append([]EnvVar{
+			{Name: "LOG_LEVEL", Value: "info"},
+			{Name: "LISTEN_ADDR", Value: ":8080"},
+			{Name: "DATABASE_URL", From: "secret db-creds/url"},
+			{Name: "REDIS_HOST", Value: "redis.default.svc.cluster.local"},
+			{Name: "FEATURE_FLAGS", From: "configMap api-config/flags"},
+			{Name: "MEMORY_LIMIT", From: "resource limits.memory"},
+		}, common...)
+	case "worker":
+		return append([]EnvVar{
+			{Name: "QUEUE", Value: "orders"},
+			{Name: "CONCURRENCY", Value: "8"},
+			{Name: "API_TOKEN", From: "secret worker-creds/token"},
+		}, common...)
+	case "web":
+		return append([]EnvVar{{Name: "NGINX_ENTRYPOINT_QUIET_LOGS", Value: "1"}}, common...)
+	case "bad-config":
+		return []EnvVar{
+			{Name: "CONFIG_PATH", Value: "/etc/legacy/config.yaml"},
+			{Name: "DB_PASSWORD", From: "secret legacy-creds/password"},
+		}
+	case "grafana":
+		return []EnvVar{
+			{Name: "GF_SECURITY_ADMIN_PASSWORD", From: "secret grafana-admin/password"},
+			{Name: "GF_SERVER_ROOT_URL", Value: "https://grafana.example.com"},
+		}
+	}
+	return nil
+}
+
+func demoEnvSources(pod string) []EnvSource {
+	switch demoApp(pod) {
+	case "api":
+		return []EnvSource{{"configMap", "api-config", ""}, {"secret", "api-secrets", "APP_"}}
+	case "worker":
+		return []EnvSource{{"configMap", "api-config", ""}}
+	}
+	return nil
+}
+
+// demoApp maps a demo pod name to the app it belongs to.
+func demoApp(pod string) string {
+	for _, app := range []string{"api", "worker", "web", "bad-config", "grafana"} {
+		if pod == app || strings.HasPrefix(pod, app+"-") {
+			return app
+		}
+	}
+	return ""
+}
+
+// demoResolved supplies the values the kubelet would have read out of a
+// ConfigMap/Secret/downward-API reference.
+var demoResolved = map[string]string{
+	"DATABASE_URL":               "postgres://api:hunter2@db.default.svc:5432/app",
+	"FEATURE_FLAGS":              "new-checkout,async-invoices",
+	"MEMORY_LIMIT":               "536870912",
+	"API_TOKEN":                  "s3cr3t-9f4b21ce",
+	"DB_PASSWORD":                "correct-horse-battery-staple",
+	"GF_SECURITY_ADMIN_PASSWORD": "admin",
+}
+
+// demoBulk are the whole ConfigMaps/Secrets pulled in via envFrom.
+var demoBulk = map[string]map[string]string{
+	"api-config":  {"FLAGS": "new-checkout,async-invoices", "TRACE_SAMPLE": "0.1"},
+	"api-secrets": {"SENTRY_DSN": "https://8f2c1e@sentry.example.com/42"},
+}
+
+// demoEnv is what `env` would print inside the container: the kubelet's
+// injections, plus the spec env with every reference resolved.
+func demoEnv(pod string) string {
+	vals := map[string]string{
+		"HOME":                    "/root",
+		"HOSTNAME":                pod,
+		"KUBERNETES_PORT":         "tcp://10.152.183.1:443",
+		"KUBERNETES_SERVICE_HOST": "10.152.183.1",
+		"KUBERNETES_SERVICE_PORT": "443",
+		"NODE_NAME":               "kube-demo-1",
+		"PATH":                    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"TERM":                    "xterm",
+	}
+	for _, s := range demoPods {
+		if s.name == pod && s.ip != "" {
+			vals["POD_IP"] = s.ip
+		}
+	}
+	for _, e := range demoDeclaredEnv(pod) {
+		switch {
+		case e.Value != "":
+			vals[e.Name] = e.Value
+		case demoResolved[e.Name] != "":
+			vals[e.Name] = demoResolved[e.Name]
+		case e.Name != "NODE_NAME" && e.Name != "POD_IP":
+			vals[e.Name] = "<resolved by the kubelet>"
+		}
+	}
+	for _, src := range demoEnvSources(pod) {
+		for k, v := range demoBulk[src.Name] {
+			vals[src.Prefix+k] = v
+		}
+	}
+
+	names := make([]string, 0, len(vals))
+	for k := range vals {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, k := range names {
+		b.WriteString(k + "=" + vals[k] + "\n")
+	}
+	return b.String()
 }
 
 func demoLogs(pod string) string {

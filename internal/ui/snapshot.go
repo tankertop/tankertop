@@ -65,6 +65,27 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 		send("5")
 	case "forwards":
 		send("6")
+	case "env", "envreveal", "envscroll":
+		// move to a pod with a rich spec env (demo order: web, web, api, …)
+		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
+		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
+		send("e")
+		if mode == "envreveal" {
+			send("m")
+		}
+		// The runtime env arrives via an async command; fetch it inline instead.
+		if mm, ok := tm.(Model); ok {
+			if p, ok := mm.selectedPod(); ok && len(p.Containers) > 0 {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				body, err := c.RuntimeEnv(ctx, p.Namespace, p.Name, mm.selectedContainer())
+				cancel()
+				tm, _ = tm.Update(envMsg{key: mm.paneKey(), body: body, err: err})
+			}
+		}
+		if mode == "envscroll" {
+			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyTab})
+			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		}
 	case "collapse":
 		send("t")
 		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})

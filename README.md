@@ -105,7 +105,8 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 | `T` | cycle colour theme (saved) |
 | `?` | help + plain-language explanations of k8s concepts |
 | `r` | refresh now |
-| `tab` | switch focus between the pods list and the logs pane |
+| `tab` | switch focus between the pods list and the bottom-right pane |
+| `e` | switch that pane between **logs** and the container's **environment** |
 | `q` | quit (saves preferences) |
 
 **Pods list (focused)**
@@ -136,6 +137,23 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 | `p` | toggle previous-container logs (why a `CrashLoopBackOff` died) |
 | `[` / `]` | switch container in a multi-container pod |
 | `/` | search within the log |
+
+**Env pane (`e` swaps it in for the logs)**
+
+Shows the container's environment twice: what the pod spec *declares* — naming
+indirect sources, so `DATABASE_URL ← secret db-creds/url` rather than a value —
+and what the process actually *sees*, read with `env` inside the container. The
+runtime list therefore also contains what the kubelet injected (the
+`KUBERNETES_*` and `*_SERVICE_HOST` service links) and what the image's own
+Dockerfile set. It needs a shell in the image; on distroless it falls back to
+the declared list. Values with credential-looking names are masked.
+
+| key | action |
+|-----|--------|
+| `↑`/`↓` `PgUp`/`PgDn` `g`/`G` | scroll |
+| `m` | mask / reveal credential-looking values |
+| `R` | re-read the runtime env (it is not refreshed on every tick) |
+| `[` / `]` | switch container in a multi-container pod |
 
 Destructive/outward actions (`d`, `R`, `s`, `P`) always ask for confirmation first.
 The interactive shell and port-forward use the node's `microk8s kubectl`. `P` starts a

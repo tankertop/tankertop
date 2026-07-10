@@ -2,7 +2,9 @@ package ui
 
 import (
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -86,13 +88,19 @@ func (m Model) renderDashboard(bodyH int) string {
 		detail = box("details", nil, rightW, detailH)
 	}
 
-	logsBorder := colFrame
-	if m.focus == focusLogs {
-		logsBorder = colCyan
+	paneBorder := colFrame
+	if m.focus == focusPane {
+		paneBorder = colCyan
 	}
-	logs := boxColored(m.logsTitle(), m.logPaneLines(rightW-2, logsH-2), rightW, logsH, logsBorder)
+	var paneBody []string
+	if m.pane == paneEnv {
+		paneBody = m.envPaneLines(rightW-2, logsH-2)
+	} else {
+		paneBody = m.logPaneLines(rightW-2, logsH-2)
+	}
+	pane := boxColored(m.paneTitle(), paneBody, rightW, logsH, paneBorder)
 
-	right := lipgloss.JoinVertical(lipgloss.Left, detail, logs)
+	right := lipgloss.JoinVertical(lipgloss.Left, detail, pane)
 	mid := lipgloss.JoinHorizontal(lipgloss.Top, pods, right)
 
 	parts := []string{cluster, mid}
@@ -422,6 +430,22 @@ func podIPLabel(p cluster.PodInfo) string {
 	return "ip " + p.PodIP
 }
 
+// paneTitle is the title of the bottom-right pane, for whichever mode is active.
+func (m Model) paneTitle() string {
+	if m.pane == paneEnv {
+		t := "env"
+		if p, ok := m.selectedPod(); ok {
+			t = "env: " + p.Name + " [" + m.selectedContainer() + "]"
+		}
+		state := "masked"
+		if m.envReveal {
+			state = "revealed"
+		}
+		return t + "  · " + state + " (e logs)"
+	}
+	return m.logsTitle()
+}
+
 func (m Model) logsTitle() string {
 	t := "logs"
 	if m.logTitle != "" {
@@ -482,6 +506,126 @@ func (m Model) logPaneLines(inner, rows int) []string {
 		out = append(out, styText.Render(fit(l, inner)))
 	}
 	return out
+}
+
+// buildEnvLines shows the container's environment twice over: what the pod spec
+// declares (instant, from the snapshot) and what the process actually sees
+// (an `env` exec, cached per container).
+func (m Model) buildEnvLines(inner int) []string {
+	p, ok := m.selectedPod()
+	if !ok {
+		return []string{styDim.Render("no pod selected")}
+	}
+	var ci cluster.ContainerInfo
+	cname := m.selectedContainer()
+	for _, c := range p.Containers {
+		if c.Name == cname {
+			ci = c
+		}
+	}
+
+	out := []string{styHeader.Render("DECLARED IN THE POD SPEC")}
+	if len(ci.Env) == 0 && len(ci.EnvFrom) == 0 {
+		out = append(out, styDim.Render("  (none — every variable below is injected by the kubelet or the image)"))
+	}
+	for _, e := range ci.Env {
+		if e.From != "" {
+			out = append(out, "  "+styText.Render(e.Name)+styDim.Render("  ← ")+
+				lipgloss.NewStyle().Foreground(colMagenta).Render(e.From))
+			continue
+		}
+		out = append(out, "  "+envAssign(e.Name, e.Value, m.envReveal))
+	}
+	for _, s := range ci.EnvFrom {
+		prefix := ""
+		if s.Prefix != "" {
+			prefix = ", prefixed " + s.Prefix
+		}
+		out = append(out, "  "+styDim.Render("envFrom ")+
+			lipgloss.NewStyle().Foreground(colMagenta).Render(s.Kind+" "+s.Name)+
+			styDim.Render("  (all keys"+prefix+")"))
+	}
+
+	out = append(out, "", styHeader.Render("RUNTIME (env inside the container)"))
+	switch {
+	case m.envLoading:
+		out = append(out, styDim.Render("  reading…"))
+	case m.envErr != nil:
+		out = append(out,
+			lipgloss.NewStyle().Foreground(colYellow).Render("  "+m.envErr.Error()),
+			styDim.Render("  (no shell in the image, or the container isn't running — the spec env above still applies)"))
+	case len(m.envRuntime) == 0:
+		out = append(out, styDim.Render("  press e to read it"))
+	default:
+		for _, l := range m.envRuntime {
+			name, value, found := strings.Cut(l, "=")
+			if !found {
+				out = append(out, styText.Render("  "+l))
+				continue
+			}
+			out = append(out, "  "+envAssign(name, value, m.envReveal))
+		}
+	}
+	return out
+}
+
+// envAssign renders NAME=value, masking values that look like credentials
+// unless the user asked to reveal them.
+func envAssign(name, value string, reveal bool) string {
+	if !reveal && looksSecret(name, value) {
+		value = "••••••••"
+		return lipgloss.NewStyle().Foreground(colCyan).Render(name) +
+			styDim.Render("=") + lipgloss.NewStyle().Foreground(colYellow).Render(value)
+	}
+	return lipgloss.NewStyle().Foreground(colCyan).Render(name) +
+		styDim.Render("=") + styText.Render(value)
+}
+
+var secretNameHints = []string{"PASS", "SECRET", "TOKEN", "CRED", "DSN", "SALT", "PRIVATE"}
+
+// looksSecret is a heuristic: a credential-ish name, or a URL carrying userinfo.
+// Values that are plainly not credentials (a port number, an IP, a service URL)
+// are never masked — Kubernetes injects a pile of FOO_SERVICE_PORT_5000_TCP_ADDR
+// variables that would otherwise trip the name check.
+func looksSecret(name, value string) bool {
+	if value == "" || benignValue(value) {
+		return false
+	}
+	up := strings.ToUpper(name)
+	for _, h := range secretNameHints {
+		if strings.Contains(up, h) {
+			return true
+		}
+	}
+	if strings.HasSuffix(up, "_KEY") || strings.Contains(up, "API_KEY") || strings.Contains(up, "APIKEY") {
+		return true
+	}
+	if i := strings.Index(value, "://"); i >= 0 {
+		if rest := value[i+3:]; strings.Contains(rest, ":") && strings.Contains(rest, "@") {
+			return true // scheme://user:password@host
+		}
+	}
+	return false
+}
+
+// benignValue reports values whose shape rules out a credential.
+func benignValue(v string) bool {
+	if _, err := strconv.Atoi(v); err == nil {
+		return true
+	}
+	if net.ParseIP(v) != nil {
+		return true
+	}
+	return strings.HasPrefix(v, "tcp://") || strings.HasPrefix(v, "udp://")
+}
+
+// envPaneLines is the scrolled window of the env pane.
+func (m Model) envPaneLines(inner, rows int) []string {
+	lines := scrollWindow(m.buildEnvLines(inner), m.envScroll, rows)
+	for i := range lines {
+		lines[i] = fit(lines[i], inner)
+	}
+	return lines
 }
 
 func wrapLine(s string, width int) []string {
@@ -967,12 +1111,15 @@ func (m Model) renderFooter() string {
 	case viewForwards:
 		keys = "↑/↓ select · x stop · X stop-all · 1 dashboard · q quit"
 	default:
-		if m.focus == focusLogs {
-			keys = "LOGS  ↑/↓ scroll · f follow · w wrap · p prev · [ ] container · / search · tab back"
-		} else if m.tree {
-			keys = "↑/↓ move · space fold · o sort · t flat · tab logs · actions S i y D d R s P · 2-6 views · T theme · ?"
-		} else {
-			keys = "↑/↓ move · o sort · t tree · tab logs · S i y D · d R s P · 2net 3events 4press 5nodes 6fwd · T theme · ?"
+		switch {
+		case m.focus == focusPane && m.pane == paneEnv:
+			keys = "ENV  ↑/↓ pgup/pgdn scroll · m mask/reveal · R re-read · [ ] container · e logs · tab back"
+		case m.focus == focusPane:
+			keys = "LOGS  ↑/↓ scroll · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
+		case m.tree:
+			keys = "↑/↓ move · space fold · o sort · t flat · tab pane · e env · actions S i y D d R s P · 2-6 views · T theme · ?"
+		default:
+			keys = "↑/↓ move · o sort · t tree · tab pane · e env · S i y D · d R s P · 2net 3events 4press 5nodes 6fwd · T theme · ?"
 		}
 	}
 	bar := styDim.Render(" " + keys)
@@ -1007,7 +1154,8 @@ func helpLines() []string {
 		styText.Render("  T  cycle colour theme (saved)        P  port-forward selected pod"),
 		styDim.Render("  themes: --theme tokyonight|gruvbox|nord|dracula|mono   (current: " + currentTheme + ")"),
 		styDim.Render("  preferences (theme, sort, tree, namespace, interval) are saved to " + configPath()),
-		styText.Render("  tab           switch focus between the pods list and the logs pane"),
+		styText.Render("  tab           switch focus between the pods list and the bottom-right pane"),
+		styText.Render("  e             switch that pane between logs and the container's environment"),
 		"",
 		styHeader.Render("Pods list (focused)"),
 		styText.Render("  ↑/↓ pgup/pgdn g/G  move    / filter pods by name"),
@@ -1024,5 +1172,14 @@ func helpLines() []string {
 		styText.Render("  ↑/↓ pgup/pgdn g/G scroll   f follow tail   w wrap"),
 		styText.Render("  p  toggle previous-container logs (why a CrashLoopBackOff died)"),
 		styText.Render("  [ ]  switch container      / search within the log"),
+		"",
+		styHeader.Render("Env pane (e toggles it in place of the logs)"),
+		styDim.Render("  Two lists: what the pod spec declares, and what the process really sees."),
+		styDim.Render("  The declared list names indirect sources (secret x/y, field spec.nodeName);"),
+		styDim.Render("  the runtime list is `env` run inside the container, so it also shows what the"),
+		styDim.Render("  kubelet injected (KUBERNETES_SERVICE_HOST, the service links, …) and what the"),
+		styDim.Render("  image's own Dockerfile set. It needs a shell in the image."),
+		styText.Render("  ↑/↓ pgup/pgdn g/G scroll   m mask/reveal credential-looking values"),
+		styText.Render("  R  re-read the runtime env    [ ]  switch container"),
 	}
 }

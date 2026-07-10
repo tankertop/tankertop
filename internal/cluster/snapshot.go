@@ -79,6 +79,64 @@ type ContainerInfo struct {
 	Restarts int32
 	CPUMilli int64
 	MemBytes int64
+	Env      []EnvVar
+	EnvFrom  []EnvSource
+}
+
+// EnvVar is one environment variable declared in a container's spec. Value is
+// empty when the variable is sourced indirectly — From then says from where.
+type EnvVar struct {
+	Name  string
+	Value string
+	From  string // "secret db-creds/password", "field spec.nodeName", …
+}
+
+// EnvSource is a whole ConfigMap/Secret imported into the container env (envFrom).
+type EnvSource struct {
+	Kind   string // configMap | secret
+	Name   string
+	Prefix string
+}
+
+// declaredEnv flattens a container's env: literals keep their value, indirect
+// ones (configMap/secret/downward API) record where the kubelet reads them from.
+func declaredEnv(vars []corev1.EnvVar) []EnvVar {
+	if len(vars) == 0 {
+		return nil
+	}
+	out := make([]EnvVar, 0, len(vars))
+	for _, v := range vars {
+		e := EnvVar{Name: v.Name, Value: v.Value}
+		switch src := v.ValueFrom; {
+		case src == nil:
+		case src.ConfigMapKeyRef != nil:
+			e.From = "configMap " + src.ConfigMapKeyRef.Name + "/" + src.ConfigMapKeyRef.Key
+		case src.SecretKeyRef != nil:
+			e.From = "secret " + src.SecretKeyRef.Name + "/" + src.SecretKeyRef.Key
+		case src.FieldRef != nil:
+			e.From = "field " + src.FieldRef.FieldPath
+		case src.ResourceFieldRef != nil:
+			e.From = "resource " + src.ResourceFieldRef.Resource
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func envSources(refs []corev1.EnvFromSource) []EnvSource {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]EnvSource, 0, len(refs))
+	for _, r := range refs {
+		switch {
+		case r.ConfigMapRef != nil:
+			out = append(out, EnvSource{"configMap", r.ConfigMapRef.Name, r.Prefix})
+		case r.SecretRef != nil:
+			out = append(out, EnvSource{"secret", r.SecretRef.Name, r.Prefix})
+		}
+	}
+	return out
 }
 
 type resourcePair struct {
@@ -178,7 +236,10 @@ func (c *Client) Collect(ctx context.Context, namespace string) Snapshot {
 		}
 
 		for _, spec := range p.Spec.Containers {
-			ci := ContainerInfo{Name: spec.Name, Image: spec.Image, State: "Waiting"}
+			ci := ContainerInfo{
+				Name: spec.Name, Image: spec.Image, State: "Waiting",
+				Env: declaredEnv(spec.Env), EnvFrom: envSources(spec.EnvFrom),
+			}
 			if cs, ok := statusByName[spec.Name]; ok {
 				ci.Ready = cs.Ready
 				ci.Restarts = cs.RestartCount

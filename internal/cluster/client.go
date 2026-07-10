@@ -130,6 +130,16 @@ func (c *Client) Exec(ctx context.Context, namespace, pod, container string, com
 	return out, err
 }
 
+// RuntimeEnv returns the environment as the container's PID 1 actually sees it:
+// the spec's env plus whatever the kubelet and the image injected. Needs a shell
+// in the image, so it fails on distroless — callers fall back to the spec env.
+func (c *Client) RuntimeEnv(ctx context.Context, namespace, pod, container string) (string, error) {
+	if c.demo {
+		return demoEnv(pod), nil
+	}
+	return c.Exec(ctx, namespace, pod, container, []string{"sh", "-c", "env | sort"})
+}
+
 // PodYAML returns the pod manifest as YAML (with noisy managedFields stripped).
 func (c *Client) PodYAML(ctx context.Context, namespace, name string) (string, error) {
 	if c.demo {

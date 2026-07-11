@@ -23,7 +23,8 @@ const (
 	viewPressure
 	viewNodes
 	viewForwards
-	viewText // yaml / describe / inspect / help
+	viewText  // yaml / describe / inspect / help
+	viewFiles // container filesystem browser
 )
 
 type focusKind int
@@ -145,6 +146,15 @@ type Model struct {
 	textLines  []string
 	textScroll int
 
+	// filesystem browser
+	fsPod       cluster.PodInfo
+	fsContainer string
+	fsPath      string
+	fsEntries   []fsEntry
+	fsCursor    int
+	fsScroll    int
+	fsErr       error
+
 	netScroll      int
 	eventScroll    int
 	pressureScroll int
@@ -195,6 +205,18 @@ type textMsg struct {
 	err         error
 }
 type execDoneMsg struct{ err error }
+
+// fsEntry is one directory entry in the filesystem browser.
+type fsEntry struct {
+	name string
+	dir  bool
+}
+
+type fsListMsg struct {
+	path    string
+	entries []fsEntry
+	err     error
+}
 
 // New constructs the initial model.
 func New(c *cluster.Client, interval time.Duration, namespace string) Model {
@@ -400,6 +422,71 @@ func (m Model) describeCmd(p cluster.PodInfo) tea.Cmd {
 		}
 		return b.String(), nil
 	})
+}
+
+// fsListCmd lists a directory inside the container. `ls -1Ap` is portable across
+// busybox and coreutils: one entry per line, no . or .., a trailing / on dirs.
+func (m Model) fsListCmd(p cluster.PodInfo, container, path string) tea.Cmd {
+	c := m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		out, err := c.Exec(ctx, p.Namespace, p.Name, container, []string{"ls", "-1Ap", path})
+		if err != nil {
+			return fsListMsg{path: path, err: err}
+		}
+		return fsListMsg{path: path, entries: parseLsEntries(out)}
+	}
+}
+
+// fsCatCmd reads a file's head into the text view.
+func (m Model) fsCatCmd(p cluster.PodInfo, container, path string) tea.Cmd {
+	c := m.client
+	return m.textCmd("file: "+path, func(ctx context.Context) (string, error) {
+		return c.Exec(ctx, p.Namespace, p.Name, container,
+			[]string{"sh", "-c", `head -c 65536 -- "$1" 2>/dev/null || cat -- "$1"`, "_", path})
+	})
+}
+
+// parseLsEntries turns `ls -1Ap` output into entries, dirs first.
+func parseLsEntries(out string) []fsEntry {
+	var entries []fsEntry
+	for _, line := range strings.Split(out, "\n") {
+		name := strings.TrimRight(line, "\r")
+		if name == "" {
+			continue
+		}
+		if dir := strings.HasSuffix(name, "/"); dir {
+			entries = append(entries, fsEntry{name: strings.TrimSuffix(name, "/"), dir: true})
+		} else {
+			entries = append(entries, fsEntry{name: name})
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].dir != entries[j].dir {
+			return entries[i].dir // dirs first
+		}
+		return entries[i].name < entries[j].name
+	})
+	return entries
+}
+
+// pathJoin joins an absolute dir and a child, keeping it clean.
+func pathJoin(dir, child string) string {
+	if child == ".." {
+		if dir == "/" || dir == "" {
+			return "/"
+		}
+		i := strings.LastIndexByte(strings.TrimRight(dir, "/"), '/')
+		if i <= 0 {
+			return "/"
+		}
+		return dir[:i]
+	}
+	if !strings.HasSuffix(dir, "/") {
+		dir += "/"
+	}
+	return dir + child
 }
 
 func (m Model) inspectCmd(p cluster.PodInfo, container string) tea.Cmd {
@@ -793,6 +880,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textLines = strings.Split(strings.TrimRight(body, "\n"), "\n")
 		m.textScroll = 0
 		m.view = viewText
+		return m, nil
+
+	case fsListMsg:
+		m.fsErr = msg.err
+		if msg.err == nil {
+			m.fsPath, m.fsEntries = msg.path, msg.entries
+			m.fsCursor, m.fsScroll = 0, 0
+		}
+		m.view = viewFiles
 		return m, nil
 
 	case execDoneMsg:

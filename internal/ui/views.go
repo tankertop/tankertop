@@ -46,6 +46,8 @@ func (m Model) View() string {
 		content = m.renderNodesView(bodyH)
 	case viewForwards:
 		content = m.renderForwardsView(bodyH)
+	case viewFiles:
+		content = m.renderFilesView(bodyH)
 	default:
 		content = m.renderDashboard(bodyH)
 	}
@@ -1204,6 +1206,53 @@ func (m Model) renderForwardsView(bodyH int) string {
 	return box(fmt.Sprintf("port-forwards (%d)  (↑↓ select · x stop · X all · esc/1 back)", len(m.forwards)), lines, m.width, bodyH)
 }
 
+func (m Model) renderFilesView(bodyH int) string {
+	inner := m.width - 2
+	rows := bodyH - 3 // path header + border
+	if rows < 1 {
+		rows = 1
+	}
+
+	head := styDim.Render("path: ") + styText.Render(m.fsPath)
+	var body []string
+	body = append(body, head, "")
+
+	switch {
+	case m.fsErr != nil:
+		body = append(body, lipgloss.NewStyle().Foreground(colYellow).Render("  "+m.fsErr.Error()),
+			styDim.Render("  (no shell in the image, or the path is unreadable)"))
+	case len(m.fsEntries) == 0:
+		body = append(body, styDim.Render("  (empty)"))
+	default:
+		start := 0
+		if m.fsCursor >= rows-2 {
+			start = m.fsCursor - (rows - 2) + 1
+		}
+		end := start + (rows - 2)
+		if end > len(m.fsEntries) {
+			end = len(m.fsEntries)
+		}
+		for i := start; i < end; i++ {
+			e := m.fsEntries[i]
+			label := e.name
+			if e.dir {
+				label = e.name + "/"
+			}
+			switch {
+			case i == m.fsCursor:
+				body = append(body, stySelect.Render(fit("  "+label, inner-2)))
+			case e.dir:
+				body = append(body, "  "+lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render(label))
+			default:
+				body = append(body, "  "+styText.Render(label))
+			}
+		}
+	}
+
+	title := fmt.Sprintf("files: %s [%s]  (enter open · backspace up · r refresh · esc back)", m.fsPod.Name, m.fsContainer)
+	return box(title, body, m.width, bodyH)
+}
+
 func (m Model) renderTextView(bodyH int) string {
 	inner := m.width - 2
 	rows := bodyH - 2
@@ -1279,6 +1328,8 @@ func (m Model) renderFooter() string {
 
 	var keys string
 	switch m.view {
+	case viewFiles:
+		keys = "↑/↓ move · enter open · backspace up · r refresh · esc back · q quit"
 	case viewText:
 		keys = "↑/↓ pgup/pgdn scroll · g/G ends · esc back · q quit"
 	case viewNet, viewEvents, viewPressure, viewNodes:
@@ -1312,9 +1363,9 @@ func (m Model) renderFooter() string {
 // actionKeys lists the per-item action keys for the current backend.
 func (m Model) actionKeys() string {
 	if m.client.IsDocker() {
-		return "S shell i inspect y d remove · u start x stop c pause K kill R restart"
+		return "S shell i inspect f files y d remove · u start x stop c pause K kill R restart"
 	}
-	return "S i y D · d R s P"
+	return "S i f y D · d R s P"
 }
 
 func portFwdPrompt(p cluster.PodInfo) string {
@@ -1350,6 +1401,7 @@ func helpLines() []string {
 		styDim.Render("     pod actions (S i y D d R s P) need a pod row, not a header"),
 		styText.Render("  S  open an interactive shell inside the selected container (exec -it)"),
 		styText.Render("  i  inspect: env, mounts, df, processes, ls /  (read-only)"),
+		styText.Render("  f  browse the container filesystem (enter opens dirs/files, backspace up)"),
 		styText.Render("  y  view live YAML        D  describe + recent events"),
 		styText.Render("  d  delete pod            R  restart workload (rollout)"),
 		styText.Render("  s  scale deployment      P  port-forward to this host"),

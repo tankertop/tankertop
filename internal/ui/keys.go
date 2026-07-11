@@ -88,9 +88,55 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case viewForwards:
 		return m.handleForwardsKey(msg)
+	case viewFiles:
+		return m.handleFilesKey(msg)
 	default:
 		return m.handleDashKey(msg)
 	}
+}
+
+func (m Model) handleFilesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	n := len(m.fsEntries)
+	switch msg.String() {
+	case "esc", "1":
+		m.view = viewDash
+	case "up", "k":
+		if m.fsCursor > 0 {
+			m.fsCursor--
+		}
+	case "down", "j":
+		if m.fsCursor < n-1 {
+			m.fsCursor++
+		}
+	case "pgup":
+		m.fsCursor -= m.scrollPage()
+	case "pgdown":
+		m.fsCursor += m.scrollPage()
+	case "g", "home":
+		m.fsCursor = 0
+	case "G", "end":
+		m.fsCursor = n - 1
+	case "backspace", "h", "left":
+		return m, m.fsListCmd(m.fsPod, m.fsContainer, pathJoin(m.fsPath, ".."))
+	case "r":
+		return m, m.fsListCmd(m.fsPod, m.fsContainer, m.fsPath)
+	case "enter", "right", "l":
+		if m.fsCursor >= 0 && m.fsCursor < n {
+			e := m.fsEntries[m.fsCursor]
+			child := pathJoin(m.fsPath, e.name)
+			if e.dir {
+				return m, m.fsListCmd(m.fsPod, m.fsContainer, child)
+			}
+			return m, m.fsCatCmd(m.fsPod, m.fsContainer, child)
+		}
+	}
+	if m.fsCursor < 0 {
+		m.fsCursor = 0
+	}
+	if m.fsCursor > n-1 {
+		m.fsCursor = n - 1
+	}
+	return m, nil
 }
 
 func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -186,6 +232,11 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if p, ok := m.actionPod(); ok && len(p.Containers) > 0 {
 			return m, m.inspectCmd(p, m.selectedContainer())
+		}
+	case "f":
+		if p, ok := m.actionPod(); ok && len(p.Containers) > 0 {
+			m.fsPod, m.fsContainer = p, m.selectedContainer()
+			return m, m.fsListCmd(p, m.fsContainer, "/")
 		}
 	case "y":
 		if p, ok := m.actionPod(); ok {

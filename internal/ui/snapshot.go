@@ -88,6 +88,17 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyTab})
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 		}
+	case "files":
+		// f opens the browser; its listing is async, so fetch it inline.
+		send("f")
+		if mm, ok := tm.(Model); ok {
+			if p, ok := mm.selectedPod(); ok && len(p.Containers) > 0 {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				out, err := c.Exec(ctx, p.Namespace, p.Name, mm.selectedContainer(), []string{"ls", "-1Ap", "/"})
+				cancel()
+				tm, _ = tm.Update(fsListMsg{path: "/", entries: parseLsEntries(out), err: err})
+			}
+		}
 	case "collapse":
 		send("t")
 		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})

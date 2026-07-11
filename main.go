@@ -69,6 +69,8 @@ func run() int {
 	truecolor := flag.Bool("truecolor", true, "force 24-bit colour (btop-style gradients)")
 	theme := flag.String("theme", cfg.Theme, "colour theme: tokyonight|gruvbox|nord|dracula|mono")
 	demo := flag.Bool("demo", false, "run against a synthetic demo cluster (no kubeconfig needed)")
+	dockerMode := flag.Bool("docker", false, "monitor a container engine (Docker/Podman/nerdctl) instead of Kubernetes")
+	dockerBin := flag.String("docker-bin", "docker", "container CLI for --docker: docker|podman|nerdctl")
 	flag.Parse()
 
 	if *showVersion {
@@ -88,8 +90,8 @@ func run() int {
 	klog.SetOutput(io.Discard)
 	klog.LogToStderr(false)
 
-	if *demo && *sshTarget != "" {
-		fmt.Fprintln(os.Stderr, "kubeview: --demo and --ssh are mutually exclusive")
+	if *demo && (*sshTarget != "" || *dockerMode) {
+		fmt.Fprintln(os.Stderr, "kubeview: --demo cannot be combined with --ssh or --docker")
 		return 1
 	}
 
@@ -98,6 +100,13 @@ func run() int {
 	switch {
 	case *demo:
 		client = cluster.NewDemo()
+	case *dockerMode:
+		// --docker --ssh host runs docker on that host (no kube tunnel).
+		client, err = cluster.NewDocker(*dockerBin, *sshTarget, sshOpts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
+			return 1
+		}
 	case *sshTarget != "":
 		// Set up before the TUI takes the screen, so ssh can prompt for a
 		// passphrase, a password or 2FA on the real terminal.

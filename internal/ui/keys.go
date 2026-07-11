@@ -206,10 +206,18 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				prompt: "Restart workload behind " + p.Name + "?"}
 		}
 	case "s":
+		if m.client.IsDocker() {
+			m.status = "scaling isn't a Docker concept — that's Compose or Swarm"
+			return m, nil
+		}
 		if p, ok := m.actionPod(); ok {
 			return m, m.scaleInfoCmd(p)
 		}
 	case "P":
+		if m.client.IsDocker() {
+			m.status = "Docker containers already publish their ports — no forward needed"
+			return m, nil
+		}
 		p, ok := m.actionPod()
 		switch {
 		case !ok:

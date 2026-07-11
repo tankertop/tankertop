@@ -245,6 +245,10 @@ func shellQuote(s string) string {
 // ShellCommand is an interactive shell inside a container, run on whichever host
 // owns the cluster.
 func (c *Client) ShellCommand(namespace, pod, container string) *exec.Cmd {
+	if c.docker {
+		return c.dockerCmd(true, "exec", "-it", pod,
+			"sh", "-c", "exec bash 2>/dev/null || exec sh")
+	}
 	argv := append(c.kubectl(), "exec", "-it", "-n", namespace, pod, "-c", container,
 		"--", "sh", "-c", "exec bash 2>/dev/null || exec sh")
 	return c.remoteCmd(true, argv)

@@ -1,9 +1,10 @@
 # kubeview
 
-A btop-style terminal dashboard for monitoring a Kubernetes (microk8s) cluster.
-A multi-pane live view: cluster CPU/MEM history (braille graphs), every pod
-across all namespaces with per-pod CPU sparklines, a container-detail pane, an
-auto-tailed logs pane for the selected pod, and per-namespace resource meters.
+A btop-style terminal dashboard for monitoring a Kubernetes cluster — or, with
+`--docker`, a Docker/Podman/nerdctl host. A multi-pane live view: cluster CPU/MEM
+history (braille graphs), every pod across all namespaces with per-pod CPU
+sparklines, a container-detail pane, an auto-tailed logs pane for the selected
+pod, and per-namespace resource meters.
 
 ![kubeview screenshot](docs/screenshot.png)
 
@@ -91,6 +92,32 @@ they shell out to `microk8s kubectl`: the interactive shell (`S`) opens its own
 SSH session, and a port-forward (`P`) binds `0.0.0.0` **on the node**, not on
 your machine. Everything else — pods, metrics, logs, env, YAML, events, delete,
 restart, scale — goes through the tunnel.
+
+## Monitor Docker instead of Kubernetes
+
+```sh
+kubeview --docker                          # local engine
+kubeview --docker --ssh user@host          # a remote engine, over ssh (no tunnel)
+kubeview --docker --docker-bin podman      # or nerdctl
+```
+
+kubeview maps a container host onto the same dashboard: a **container** is a pod,
+its **Compose project** is the namespace, its **Compose service** is the workload
+— so the tree (`t`) groups `project ▸ service ▸ container`, and logs (`docker
+logs`), the shell (`S`), inspect (`i`), the env pane (`docker inspect` +
+`docker exec env`), live CPU/MEM (`docker stats`), delete (`d`) and restart (`R`)
+all work as they do for Kubernetes. Memory/CPU limits set with `--memory`/`--cpus`
+show up in the pressure view (`4`); the nodes view (`5`) is the single engine host.
+
+It shells out to the `docker` CLI (so Podman and nerdctl work via `--docker-bin`);
+with `--ssh` it runs those commands on the remote host over the ssh session, so
+nothing is installed there and no daemon socket needs exposing.
+
+Concepts Docker doesn't have are handled honestly: scaling (`s`) and port-forward
+(`P`) explain they don't apply (containers publish ports directly), and the
+network (`2`) and events (`3`) views — which are built from Kubernetes Services,
+Ingress and control-plane events — are empty. Wiring them to `docker network` and
+`docker events` is the planned next step.
 
 ## Deploy on a server
 
@@ -233,6 +260,9 @@ unbounded/under-requested/near-OOM pods.
 | `--ssh` | off | monitor `[user@]host` over an SSH tunnel; installs nothing there |
 | `--ssh-opt` | — | extra argument passed to `ssh` (repeatable), e.g. `-J bastion` |
 | `--ssh-kubeconfig-cmd` | `microk8s config` … | command run on the SSH host to print a kubeconfig |
+| `--docker` | off | monitor a container engine instead of Kubernetes |
+| `--docker-bin` | `docker` | container CLI for `--docker`: `docker`/`podman`/`nerdctl` |
+| `--kubectl` | auto | kubectl invocation for shell/port-forward (auto-detects `kubectl` or `microk8s kubectl`) |
 | `-namespace` | all | limit to one namespace |
 | `-interval` | `2s` | refresh interval |
 | `-truecolor` | `true` | force 24-bit colour (btop-style gradients) |

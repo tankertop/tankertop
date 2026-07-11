@@ -15,6 +15,9 @@ func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
 	if c.demo {
 		return nil
 	}
+	if c.docker {
+		return c.dockerDelete(ctx, name)
+	}
 	return c.Clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
@@ -43,6 +46,9 @@ func (c *Client) RestartWorkload(ctx context.Context, p PodInfo) (string, error)
 	if c.demo {
 		return "demo: would restart " + p.Controller, nil
 	}
+	if c.docker {
+		return c.dockerRestart(ctx, p.Name)
+	}
 	if dep, ok := c.deploymentForPod(ctx, p); ok {
 		patch := fmt.Sprintf(
 			`{"spec":{"template":{"metadata":{"annotations":{"kubeview.dev/restartedAt":%q}}}}}`,
@@ -69,6 +75,9 @@ type ScaleTarget struct {
 
 // ScaleInfo resolves the Deployment behind a pod and its current replica count.
 func (c *Client) ScaleInfo(ctx context.Context, p PodInfo) (ScaleTarget, bool) {
+	if c.docker {
+		return ScaleTarget{}, false // no replica concept for a plain container
+	}
 	if c.demo {
 		if len(p.Controller) > 11 && p.Controller[:11] == "Deployment/" {
 			return ScaleTarget{Namespace: p.Namespace, Name: p.Controller[11:], Replicas: 2}, true

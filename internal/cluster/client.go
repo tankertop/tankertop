@@ -30,9 +30,16 @@ type Client struct {
 
 	kubectlCmd []string // argv prefix for kubectl on the cluster host
 
+	docker    bool
+	dockerBin string
+
 	demo     bool
 	demoTick int
 }
+
+// IsDocker reports whether this client is backed by a container engine rather
+// than Kubernetes — the UI uses it to hide concepts Docker doesn't have.
+func (c *Client) IsDocker() bool { return c.docker }
 
 // kubectl returns the argv prefix for running kubectl on whichever host owns the
 // cluster. Empty only for the demo client, which never shells out.
@@ -126,6 +133,11 @@ func (c *Client) Logs(ctx context.Context, namespace, pod, container string, lin
 	if c.demo {
 		return demoLogs(pod), nil
 	}
+	if c.docker {
+		// Docker keeps a container's whole history under one id, so there is no
+		// separate "previous" stream to fetch.
+		return c.dockerLogs(ctx, pod, lines)
+	}
 	req := c.Clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
 		Container: container,
 		TailLines: &lines,
@@ -148,6 +160,9 @@ func (c *Client) Logs(ctx context.Context, namespace, pod, container string, lin
 func (c *Client) Exec(ctx context.Context, namespace, pod, container string, command []string) (string, error) {
 	if c.demo {
 		return demoInspect(pod), nil
+	}
+	if c.docker {
+		return c.dockerExec(ctx, pod, command)
 	}
 	req := c.Clientset.CoreV1().RESTClient().Post().
 		Resource("pods").Name(pod).Namespace(namespace).SubResource("exec").
@@ -178,6 +193,9 @@ func (c *Client) RuntimeEnv(ctx context.Context, namespace, pod, container strin
 	if c.demo {
 		return demoEnv(pod), nil
 	}
+	if c.docker {
+		return c.dockerRuntimeEnv(ctx, pod)
+	}
 	return c.Exec(ctx, namespace, pod, container, []string{"sh", "-c", "env | sort"})
 }
 
@@ -185,6 +203,9 @@ func (c *Client) RuntimeEnv(ctx context.Context, namespace, pod, container strin
 func (c *Client) PodYAML(ctx context.Context, namespace, name string) (string, error) {
 	if c.demo {
 		return demoYAML(namespace, name), nil
+	}
+	if c.docker {
+		return c.dockerYAML(ctx, name)
 	}
 	p, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -203,6 +224,9 @@ func (c *Client) PodYAML(ctx context.Context, namespace, name string) (string, e
 func (c *Client) PodEvents(ctx context.Context, namespace, name string) ([]string, error) {
 	if c.demo {
 		return demoPodEvents(name), nil
+	}
+	if c.docker {
+		return c.dockerEvents(ctx, name)
 	}
 	list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: "involvedObject.name=" + name,

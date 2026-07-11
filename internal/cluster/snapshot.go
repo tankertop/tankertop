@@ -151,6 +151,9 @@ func (c *Client) Collect(ctx context.Context, namespace string) Snapshot {
 		c.demoTick++
 		return DemoSnapshot(c.demoTick)
 	}
+	if c.docker {
+		return c.dockerCollect(ctx, namespace)
+	}
 	snap := Snapshot{Context: c.Context, CollectedAt: time.Now()}
 
 	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})

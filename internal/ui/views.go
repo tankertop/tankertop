@@ -838,17 +838,101 @@ func (m Model) buildNetLines() []string {
 	return out
 }
 
-func (m Model) netTotalLines() int { return len(m.buildNetLines()) }
+func (m Model) netLines() []string {
+	if m.client.IsDocker() {
+		return m.buildDockerNetLines()
+	}
+	return m.buildNetLines()
+}
+
+func (m Model) netTotalLines() int { return len(m.netLines()) }
+
+// buildDockerNetLines renders docker networks, the containers on each, and a
+// copy-paste Mermaid diagram of the topology.
+func (m Model) buildDockerNetLines() []string {
+	out := []string{
+		styDim.Render("Docker networks and the containers attached to each. A container can be on several networks; they can reach each other by name within a network."),
+		"",
+	}
+	if len(m.snap.Networks) == 0 {
+		out = append(out, styDim.Render("  <none>"))
+		return out
+	}
+	for _, n := range m.snap.Networks {
+		subnet := ""
+		if n.Subnet != "" {
+			subnet = "  " + n.Subnet
+		}
+		out = append(out, fmt.Sprintf("%s  %s%s",
+			styText.Bold(true).Render(n.Name),
+			lipgloss.NewStyle().Foreground(colMagenta).Render(n.Driver),
+			styDim.Render(subnet)))
+		if len(n.Containers) == 0 {
+			out = append(out, styDim.Render("    └ (no containers)"))
+		}
+		for _, ep := range n.Containers {
+			out = append(out, fmt.Sprintf("    └ %s  %s",
+				styText.Render(pad(ep.Name, 28)), styDim.Render(ep.IPv4)))
+		}
+		out = append(out, "")
+	}
+
+	out = append(out, styHeader.Render("MERMAID  (copy into a Markdown/Mermaid renderer)"), "")
+	for _, l := range mermaidNetwork(m.snap.Networks) {
+		out = append(out, styText.Render(l))
+	}
+	return out
+}
+
+// mermaidNetwork emits a Mermaid graph: each network is a subgraph holding the
+// containers attached to it.
+func mermaidNetwork(nets []cluster.DockerNetwork) []string {
+	lines := []string{"graph LR"}
+	for _, n := range nets {
+		if len(n.Containers) == 0 {
+			continue
+		}
+		lines = append(lines, "  subgraph "+mermaidID("net_"+n.Name)+"[\""+n.Name+"\"]")
+		for _, ep := range n.Containers {
+			lines = append(lines, "    "+mermaidID(ep.Name)+"[\""+ep.Name+"\"]")
+		}
+		lines = append(lines, "  end")
+	}
+	return lines
+}
+
+// mermaidID sanitises a name into a Mermaid-safe node id (alphanumerics kept,
+// everything else underscored, and a letter prefixed so it never starts with a
+// digit — which some Mermaid versions reject).
+func mermaidID(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	if out == "" || (out[0] >= '0' && out[0] <= '9') {
+		out = "n" + out
+	}
+	return out
+}
 
 func (m Model) renderNetView(bodyH int) string {
-	lines := m.buildNetLines()
+	lines := m.netLines()
 	inner := m.width - 2
 	rows := bodyH - 2
 	lines = scrollWindow(lines, m.netScroll, rows)
 	for i := range lines {
 		lines[i] = fit(lines[i], inner)
 	}
-	return box("network  (esc/1 back · ↑↓ pgup/pgdn scroll)", lines, m.width, bodyH)
+	title := "network  (esc/1 back · ↑↓ pgup/pgdn scroll)"
+	if m.client.IsDocker() {
+		title = "networks  (esc/1 back · ↑↓ pgup/pgdn scroll)"
+	}
+	return box(title, lines, m.width, bodyH)
 }
 
 // ---- events view ----

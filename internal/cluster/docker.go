@@ -213,7 +213,72 @@ func (c *Client) dockerCollect(ctx context.Context, namespace string) Snapshot {
 		PodCount:     info.ContainersRunning,
 		PodsCapacity: info.Containers,
 	}}
+	snap.Networks = c.collectDockerNetworks(ctx)
 	return snap
+}
+
+// DockerNetwork is one docker network and the containers attached to it.
+type DockerNetwork struct {
+	Name       string
+	Driver     string
+	Subnet     string
+	Containers []DockerNetEndpoint
+}
+
+// DockerNetEndpoint is a container's attachment to a network.
+type DockerNetEndpoint struct {
+	Name string
+	IPv4 string
+}
+
+type dockerNetInspect struct {
+	Name string `json:"Name"`
+	Driver string `json:"Driver"`
+	IPAM struct {
+		Config []struct {
+			Subnet string `json:"Subnet"`
+		} `json:"Config"`
+	} `json:"IPAM"`
+	Containers map[string]struct {
+		Name string `json:"Name"`
+		IPv4Address string `json:"IPv4Address"`
+	} `json:"Containers"`
+}
+
+// collectDockerNetworks lists docker networks and which containers are on each.
+func (c *Client) collectDockerNetworks(ctx context.Context) []DockerNetwork {
+	ids, err := c.dockerOut(ctx, "network", "ls", "-q")
+	if err != nil {
+		return nil
+	}
+	idList := strings.Fields(string(ids))
+	if len(idList) == 0 {
+		return nil
+	}
+	b, err := c.dockerOut(ctx, append([]string{"network", "inspect"}, idList...)...)
+	if err != nil {
+		return nil
+	}
+	var raw []dockerNetInspect
+	if json.Unmarshal(b, &raw) != nil {
+		return nil
+	}
+	out := make([]DockerNetwork, 0, len(raw))
+	for _, n := range raw {
+		dn := DockerNetwork{Name: n.Name, Driver: n.Driver}
+		if len(n.IPAM.Config) > 0 {
+			dn.Subnet = n.IPAM.Config[0].Subnet
+		}
+		for _, ep := range n.Containers {
+			dn.Containers = append(dn.Containers, DockerNetEndpoint{
+				Name: ep.Name, IPv4: strings.SplitN(ep.IPv4Address, "/", 2)[0],
+			})
+		}
+		sort.Slice(dn.Containers, func(i, j int) bool { return dn.Containers[i].Name < dn.Containers[j].Name })
+		out = append(out, dn)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // containerToPod maps one inspected container onto kubeview's PodInfo.

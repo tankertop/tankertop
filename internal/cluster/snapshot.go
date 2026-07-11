@@ -20,6 +20,7 @@ type Snapshot struct {
 	Services    []ServiceInfo
 	Ingresses   []IngressInfo
 	NetPols     []NetPolInfo
+	Networks    []DockerNetwork // populated in --docker mode
 	Events      []EventInfo
 	MetricsOK   bool
 	Err         error

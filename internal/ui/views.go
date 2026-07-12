@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/tankertop/tankertop/internal/cluster"
 )
@@ -522,6 +523,9 @@ func (m Model) paneTitle() string {
 		if m.envReveal {
 			state = "revealed"
 		}
+		if m.envHScroll > 0 {
+			state += fmt.Sprintf(" »%d", m.envHScroll)
+		}
 		return t + "  · " + state + " (e logs)"
 	}
 	return m.logsTitle()
@@ -770,7 +774,8 @@ func benignValue(v string) bool {
 func (m Model) envPaneLines(inner, rows int) []string {
 	lines := scrollWindow(m.buildEnvLines(inner), m.envScroll, rows)
 	for i := range lines {
-		lines[i] = fit(lines[i], inner)
+		// ansi.Cut drops the leading columns without breaking the colour codes.
+		lines[i] = fit(ansi.Cut(lines[i], m.envHScroll, m.envHScroll+inner), inner)
 	}
 	return lines
 }
@@ -1418,7 +1423,7 @@ func (m Model) renderFooter() string {
 	default:
 		switch {
 		case m.focus == focusPane && m.pane == paneEnv:
-			keys = "ENV  ↑/↓ pgup/pgdn scroll · m mask/reveal · R re-read · [ ] container · e logs · tab back"
+			keys = "ENV  ↑/↓ scroll · ←/→ pan · m mask/reveal · R re-read · [ ] container · e logs · tab back"
 		case m.focus == focusPane:
 			keys = "LOGS  ↑/↓ scroll · ←/→ pan · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
 		case m.tree:

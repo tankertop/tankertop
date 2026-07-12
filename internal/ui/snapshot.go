@@ -65,7 +65,7 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 		send("5")
 	case "forwards":
 		send("6")
-	case "env", "envreveal", "envscroll", "envtop":
+	case "env", "envreveal", "envscroll", "envtop", "envpan":
 		if mode != "envtop" {
 			// move to a pod with a rich spec env (demo order: web, web, api, …)
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -87,6 +87,13 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 		if mode == "envscroll" {
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyTab})
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		}
+		if mode == "envpan" {
+			send("m") // reveal, so long values are visible to pan across
+			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyTab})
+			for i := 0; i < 4; i++ {
+				tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRight})
+			}
 		}
 	case "detailgraph":
 		send("v")

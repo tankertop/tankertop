@@ -405,6 +405,13 @@ func (m Model) handleEnvPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "tab", "esc":
 		m.focus = focusPods
+	case "left":
+		m.envHScroll -= 8
+		if m.envHScroll < 0 {
+			m.envHScroll = 0
+		}
+	case "right":
+		m.envHScroll += 8
 	case "m":
 		m.envReveal = !m.envReveal
 	case "R":
@@ -417,7 +424,7 @@ func (m Model) handleEnvPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			delta = -1
 		}
 		m = m.cycleContainer(delta)
-		m.envScroll, m.envKey = 0, ""
+		m.envScroll, m.envHScroll, m.envKey = 0, 0, ""
 		cmd := m.refreshEnv()
 		return m, tea.Batch(cmd, m.logsCmd(false))
 	case "q", "ctrl+c":
@@ -474,6 +481,7 @@ func (m Model) onSelectionChange() (tea.Model, tea.Cmd) {
 	m.logFollow = true
 	m.logPrevious = false
 	m.envScroll = 0
+	m.envHScroll = 0
 	cmds := []tea.Cmd{m.logsCmd(false)}
 	if m.pane == paneEnv {
 		cmds = append(cmds, m.refreshEnv())

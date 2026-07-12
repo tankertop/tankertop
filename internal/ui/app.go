@@ -140,6 +140,7 @@ type Model struct {
 
 	// env pane: runtime env read out of the container, plus the spec env
 	envScroll  int
+	envHScroll int // horizontal scroll (columns)
 	envRuntime []string
 	envKey     string // pod/container the runtime env belongs to
 	envErr     error

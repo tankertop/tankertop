@@ -103,7 +103,7 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 		if mm, ok := tm.(Model); ok {
 			if p, ok := mm.selectedPod(); ok && len(p.Containers) > 0 {
 				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-				out, err := c.Exec(ctx, p.Namespace, p.Name, mm.selectedContainer(), []string{"ls", "-1Ap", "/"})
+				out, err := c.Exec(ctx, p.Namespace, p.Name, mm.selectedContainer(), []string{"sh", "-c", fsListScript, "_", "/"})
 				cancel()
 				tm, _ = tm.Update(fsListMsg{path: "/", entries: parseLsEntries(out), err: err})
 			}

@@ -20,7 +20,8 @@ func TestPathJoin(t *testing.T) {
 }
 
 func TestParseLsEntriesDirsFirst(t *testing.T) {
-	out := "zzz.txt\nbin/\netc/\nalpine-release\napk/\n\n"
+	// type-prefixed: 'd'/'f' + name (symlink-to-dir also comes through as 'd')
+	out := "fzzz.txt\ndbin\ndetc\nfalpine-release\ndapk\n\n"
 	got := parseLsEntries(out)
 	want := []fsEntry{
 		{"apk", true}, {"bin", true}, {"etc", true}, // dirs, alpha

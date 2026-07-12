@@ -437,14 +437,23 @@ func (m Model) describeCmd(p cluster.PodInfo) tea.Cmd {
 	})
 }
 
-// fsListCmd lists a directory inside the container. `ls -1Ap` is portable across
-// busybox and coreutils: one entry per line, no . or .., a trailing / on dirs.
+// fsListScript lists a directory one entry per line, each prefixed with its
+// type ('d' or 'f'). It classifies with `[ -d ]`, which follows symlinks — so a
+// symlink pointing at a directory is a directory (unlike `ls -p`, which marks
+// only real dirs and leaves symlink-dirs looking like files that then fail to
+// `cat`). Broken symlinks are kept (via `-L`) and reported as files. Portable
+// POSIX sh, works on busybox and coreutils.
+const fsListScript = `cd "$1" 2>/dev/null && for e in * .[!.]* ..?*; do ` +
+	`[ -e "$e" ] || [ -L "$e" ] || continue; ` +
+	`if [ -d "$e" ]; then printf 'd%s\n' "$e"; else printf 'f%s\n' "$e"; fi; done`
+
+// fsListCmd lists a directory inside the container.
 func (m Model) fsListCmd(p cluster.PodInfo, container, path string) tea.Cmd {
 	c := m.client
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		out, err := c.Exec(ctx, p.Namespace, p.Name, container, []string{"ls", "-1Ap", path})
+		out, err := c.Exec(ctx, p.Namespace, p.Name, container, []string{"sh", "-c", fsListScript, "_", path})
 		if err != nil {
 			return fsListMsg{path: path, err: err}
 		}
@@ -540,19 +549,16 @@ func hexDump(data []byte) string {
 	return b.String()
 }
 
-// parseLsEntries turns `ls -1Ap` output into entries, dirs first.
+// parseLsEntries turns the type-prefixed listing ('d'/'f' + name per line) into
+// entries, dirs first then files, each alphabetical.
 func parseLsEntries(out string) []fsEntry {
 	var entries []fsEntry
 	for _, line := range strings.Split(out, "\n") {
-		name := strings.TrimRight(line, "\r")
-		if name == "" {
+		line = strings.TrimRight(line, "\r")
+		if len(line) < 2 {
 			continue
 		}
-		if dir := strings.HasSuffix(name, "/"); dir {
-			entries = append(entries, fsEntry{name: strings.TrimSuffix(name, "/"), dir: true})
-		} else {
-			entries = append(entries, fsEntry{name: name})
-		}
+		entries = append(entries, fsEntry{name: line[1:], dir: line[0] == 'd'})
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		if entries[i].dir != entries[j].dir {

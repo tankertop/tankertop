@@ -46,13 +46,12 @@ curl -fsSL https://raw.githubusercontent.com/tankertop/tankertop/main/install.sh
 brew install tankertop/tap/tankertop
 ```
 
-**Container image** (GHCR and Docker Hub, multi-arch) — great for a quick look
-with no local install; mount a kubeconfig to use a real cluster:
+**Container image** (GHCR, multi-arch) — great for a quick look with no local
+install; mount a kubeconfig to use a real cluster:
 
 ```sh
 docker run --rm -it ghcr.io/tankertop/tankertop --demo
 docker run --rm -it -v "$HOME/.kube:/root/.kube:ro" ghcr.io/tankertop/tankertop
-# Docker Hub mirror: tankertop/tankertop
 ```
 
 **Debian/Ubuntu (`.deb`)** — tracked by `dpkg`, so `apt remove tankertop` cleans up

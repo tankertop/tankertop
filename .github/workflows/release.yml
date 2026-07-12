@@ -30,11 +30,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # To add Docker Hub, restore the login step here (needs DOCKERHUB_USERNAME /
+      # DOCKERHUB_TOKEN secrets) and the tankertop/tankertop images in .goreleaser.yaml.
 
       - uses: goreleaser/goreleaser-action@v6
         with:

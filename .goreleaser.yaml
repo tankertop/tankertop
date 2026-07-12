@@ -49,6 +49,8 @@ nfpms:
       - src: README.md
         dst: /usr/share/doc/tankertop/README.md
 
+# GHCR only for now. To add Docker Hub, add the tankertop/tankertop:* image
+# templates back here and the login step in release.yml (needs DOCKERHUB_* secrets).
 dockers:
   - id: amd64
     goarch: amd64
@@ -56,7 +58,6 @@ dockers:
     dockerfile: Dockerfile
     image_templates:
       - "ghcr.io/tankertop/tankertop:{{ .Version }}-amd64"
-      - "tankertop/tankertop:{{ .Version }}-amd64"
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.title=tankertop"
@@ -69,7 +70,6 @@ dockers:
     dockerfile: Dockerfile
     image_templates:
       - "ghcr.io/tankertop/tankertop:{{ .Version }}-arm64"
-      - "tankertop/tankertop:{{ .Version }}-arm64"
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.title=tankertop"
@@ -86,14 +86,6 @@ docker_manifests:
     image_templates:
       - "ghcr.io/tankertop/tankertop:{{ .Version }}-amd64"
       - "ghcr.io/tankertop/tankertop:{{ .Version }}-arm64"
-  - name_template: "tankertop/tankertop:{{ .Version }}"
-    image_templates:
-      - "tankertop/tankertop:{{ .Version }}-amd64"
-      - "tankertop/tankertop:{{ .Version }}-arm64"
-  - name_template: "tankertop/tankertop:latest"
-    image_templates:
-      - "tankertop/tankertop:{{ .Version }}-amd64"
-      - "tankertop/tankertop:{{ .Version }}-arm64"
 
 brews:
   - repository:

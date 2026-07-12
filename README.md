@@ -1,4 +1,4 @@
-# kubeview
+# tankertop
 
 A btop-style terminal dashboard for monitoring a Kubernetes cluster — or, with
 `--docker`, a Docker/Podman/nerdctl host. A multi-pane live view: cluster CPU/MEM
@@ -6,32 +6,32 @@ history (braille graphs), every pod across all namespaces with per-pod CPU
 sparklines, a container-detail pane, an auto-tailed logs pane for the selected
 pod, and per-namespace resource meters.
 
-![kubeview screenshot](docs/screenshot.png)
+![tankertop screenshot](docs/screenshot.png)
 
-![kubeview demo](docs/demo.gif)
+![tankertop demo](docs/demo.gif)
 
-> Try it without a cluster: `kubeview --demo` renders a synthetic cluster (the
+> Try it without a cluster: `tankertop --demo` renders a synthetic cluster (the
 > data used for the screenshot and animation above).
 
 ## Install
 
-kubeview is a single static binary (no runtime deps). Pick one:
+tankertop is a single static binary (no runtime deps). Pick one:
 
 **Release binary (installer):** run on the target machine:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tpenzkofer/kubeview/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tankertop/tankertop/main/install.sh | bash
 # or a specific version:  ... | bash -s -- v0.1.0
 ```
 
-**Debian / Ubuntu (`.deb`):** tracked by `dpkg`, so `apt remove kubeview` cleans up.
+**Debian / Ubuntu (`.deb`):** tracked by `dpkg`, so `apt remove tankertop` cleans up.
 
 ```sh
 arch=$(dpkg --print-architecture)                     # amd64 or arm64
-tag=$(curl -fsSL https://api.github.com/repos/tpenzkofer/kubeview/releases/latest \
+tag=$(curl -fsSL https://api.github.com/repos/tankertop/tankertop/releases/latest \
       | grep -m1 '"tag_name"' | cut -d'"' -f4)
-deb="kubeview_${tag#v}_linux_${arch}.deb"
-curl -fsSLO "https://github.com/tpenzkofer/kubeview/releases/download/${tag}/${deb}"
+deb="tankertop_${tag#v}_linux_${arch}.deb"
+curl -fsSLO "https://github.com/tankertop/tankertop/releases/download/${tag}/${deb}"
 sudo apt install "./${deb}"
 ```
 
@@ -41,14 +41,14 @@ An `.rpm` with the same name scheme is published for Fedora/RHEL.
 proxy resolves `@latest` to the tip of `main`.
 
 ```sh
-go install github.com/tpenzkofer/kubeview@latest
+go install github.com/tankertop/tankertop@latest
 ```
 
 **From source:**
 
 ```sh
-git clone https://github.com/tpenzkofer/kubeview && cd kubeview
-make build          # ./kubeview for this host
+git clone https://github.com/tankertop/tankertop && cd tankertop
+make build          # ./tankertop for this host
 make dist           # cross-compiled binaries in dist/ (linux/darwin × amd64/arm64)
 ```
 
@@ -64,27 +64,27 @@ microk8s enable metrics-server   # needed for the CPU/MEM meters
 ## Monitor a remote cluster over SSH
 
 ```sh
-kubeview --ssh <user>@<ip>
+tankertop --ssh <user>@<ip>
 ```
 
-Nothing is installed on the node. kubeview reads its kubeconfig over SSH, opens
+Nothing is installed on the node. tankertop reads its kubeconfig over SSH, opens
 an `ssh -L` tunnel to the API server, and points client-go at it — so only port
 22 has to be reachable and the API server port can stay firewalled.
 
-**Credentials are OpenSSH's business, not kubeview's.** There is no password
+**Credentials are OpenSSH's business, not tankertop's.** There is no password
 flag, and nothing is stored: authentication is whatever `ssh <host>` already does
 on your machine — agent keys, `~/.ssh/config` aliases, `ProxyJump` bastions,
 `known_hosts` checking, passphrase and 2FA prompts. The tunnel is established
 before the TUI takes the screen, so those prompts work normally.
 
 ```sh
-kubeview --ssh mynode                       # a ~/.ssh/config alias
-kubeview --ssh user@node --ssh-opt -J --ssh-opt bastion.corp     # via a bastion
-kubeview --ssh user@node --ssh-opt -i --ssh-opt ~/.ssh/k8s_ed25519
-kubeview --ssh user@node --ssh-kubeconfig-cmd 'sudo cat /etc/rancher/k3s/k3s.yaml'
+tankertop --ssh mynode                       # a ~/.ssh/config alias
+tankertop --ssh user@node --ssh-opt -J --ssh-opt bastion.corp     # via a bastion
+tankertop --ssh user@node --ssh-opt -i --ssh-opt ~/.ssh/k8s_ed25519
+tankertop --ssh user@node --ssh-kubeconfig-cmd 'sudo cat /etc/rancher/k3s/k3s.yaml'
 ```
 
-By default kubeview runs `microk8s config`, falling back to `kubectl config view
+By default tankertop runs `microk8s config`, falling back to `kubectl config view
 --raw` and then `~/.kube/config`; `--ssh-kubeconfig-cmd` overrides that.
 
 Requires the `ssh` client in `PATH`. Two things still run *on the node* because
@@ -96,12 +96,12 @@ restart, scale — goes through the tunnel.
 ## Monitor Docker instead of Kubernetes
 
 ```sh
-kubeview --docker                          # local engine
-kubeview --docker --ssh user@host          # a remote engine, over ssh (no tunnel)
-kubeview --docker --docker-bin podman      # or nerdctl
+tankertop --docker                          # local engine
+tankertop --docker --ssh user@host          # a remote engine, over ssh (no tunnel)
+tankertop --docker --docker-bin podman      # or nerdctl
 ```
 
-kubeview maps a container host onto the same dashboard: a **container** is a pod,
+tankertop maps a container host onto the same dashboard: a **container** is a pod,
 its **Compose project** is the namespace, its **Compose service** is the workload
 — so the tree (`t`) groups `project ▸ service ▸ container`, and logs (`docker
 logs`), the shell (`S`), inspect (`i`), the env pane (`docker inspect` +
@@ -128,27 +128,27 @@ view (`3`), built from Kubernetes control-plane events, stays empty.
 
 ## Deploy on a server
 
-kubeview is an interactive TUI, so you run it on a machine and view it in a
+tankertop is an interactive TUI, so you run it on a machine and view it in a
 terminal — it is not a background daemon. Three setups:
 
-- **From your workstation over SSH:** `kubeview --ssh user@node` (above). Nothing
+- **From your workstation over SSH:** `tankertop --ssh user@node` (above). Nothing
   to install on the node.
 - **On the cluster node:** install the binary (above) and run it over SSH.
   It uses the node's `~/.kube/config`. This is the simplest option, and the one
   where `S` and `P` behave most naturally.
-- **With an exported kubeconfig:** `scp node:~/.kube/config ./kc && kubeview
+- **With an exported kubeconfig:** `scp node:~/.kube/config ./kc && tankertop
   -kubeconfig ./kc` (edit the `server:` field to the node's reachable IP). Needs
   the API server port open to you.
 
 Before a release exists (or to run an unreleased commit), build on the node and
-install it yourself — stamping the version keeps `kubeview -version` honest about
+install it yourself — stamping the version keeps `tankertop -version` honest about
 which commit is running:
 
 ```sh
-rsync -a --exclude .git ./ node:~/kubeview/
-ssh node 'cd ~/kubeview && go build -trimpath \
-  -ldflags "-s -w -X main.version=$(git rev-parse --short HEAD)" -o kubeview . \
-  && sudo install -m 0755 kubeview /usr/local/bin/kubeview'
+rsync -a --exclude .git ./ node:~/tankertop/
+ssh node 'cd ~/tankertop && go build -trimpath \
+  -ldflags "-s -w -X main.version=$(git rev-parse --short HEAD)" -o tankertop . \
+  && sudo install -m 0755 tankertop /usr/local/bin/tankertop'
 ```
 
 Note this copies the binary rather than linking it, so a later rebuild in the
@@ -157,7 +157,7 @@ source tree does not update `/usr/local/bin` — re-run the install.
 Or cross-compile for the server's arch and copy it over:
 
 ```sh
-make dist && scp dist/kubeview-linux-arm64 user@server:/usr/local/bin/kubeview
+make dist && scp dist/tankertop-linux-arm64 user@server:/usr/local/bin/tankertop
 ```
 
 Releases (tarballs, `.deb`/`.rpm`, checksums) are produced automatically by
@@ -166,14 +166,14 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 ## Run
 
 ```sh
-./kubeview                  # interactive btop-style TUI (all namespaces)
-./kubeview --demo           # synthetic cluster, no kubeconfig needed
-./kubeview -theme gruvbox   # tokyonight|gruvbox|nord|dracula|mono
-./kubeview -namespace demo  # single namespace
-./kubeview -interval 1s     # refresh rate
-./kubeview --snapshot       # print one plain-text frame and exit (scriptable)
-./kubeview --dump-frame 140x40                 # render one TUI frame to stdout (for testing)
-./kubeview --dump-frame 140x40 --frame-mode net   # modes: list|net|logs|help|modal
+./tankertop                  # interactive btop-style TUI (all namespaces)
+./tankertop --demo           # synthetic cluster, no kubeconfig needed
+./tankertop -theme gruvbox   # tokyonight|gruvbox|nord|dracula|mono
+./tankertop -namespace demo  # single namespace
+./tankertop -interval 1s     # refresh rate
+./tankertop --snapshot       # print one plain-text frame and exit (scriptable)
+./tankertop --dump-frame 140x40                 # render one TUI frame to stdout (for testing)
+./tankertop --dump-frame 140x40 --frame-mode net   # modes: list|net|logs|help|modal
 ```
 
 ### Keys
@@ -258,7 +258,7 @@ conditions and pod-slot saturation; `4` ranks pods by memory headroom and flags
 unbounded/under-requested/near-OOM pods.
 
 **Preferences** (theme, sort, tree, namespace, interval) are saved on quit to
-`$XDG_CONFIG_HOME/kubeview/config.json` and restored next launch; explicit flags override them.
+`$XDG_CONFIG_HOME/tankertop/config.json` and restored next launch; explicit flags override them.
 
 ## Flags
 
@@ -285,5 +285,5 @@ unbounded/under-requested/near-OOM pods.
   ContainerCreating, Completed, Error, Terminating, …) and is colour-coded.
 - The shell (`S`), inspect (`i`) and the env pane's runtime list all need
   `pods/exec` on the kubeconfig's identity. Masking secret-looking values is
-  shoulder-surfing protection, not access control — anyone who can run kubeview
+  shoulder-surfing protection, not access control — anyone who can run tankertop
   against the cluster can already read them.

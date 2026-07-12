@@ -1,4 +1,4 @@
-module github.com/tpenzkofer/kubeview
+module github.com/tankertop/tankertop
 
 go 1.26.0
 

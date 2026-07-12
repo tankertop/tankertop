@@ -1,14 +1,14 @@
 version: 2
-project_name: kubeview
+project_name: tankertop
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: kubeview
+  - id: tankertop
     main: .
-    binary: kubeview
+    binary: tankertop
     env:
       - CGO_ENABLED=0
     flags:
@@ -33,9 +33,9 @@ archives:
 
 nfpms:
   - id: packages
-    package_name: kubeview
+    package_name: tankertop
     vendor: Tobias Penzkofer
-    homepage: https://github.com/tpenzkofer/kubeview
+    homepage: https://github.com/tankertop/tankertop
     maintainer: Tobias Penzkofer <penzkofert@gmail.com>
     description: btop-style terminal dashboard for Kubernetes clusters.
     license: MIT
@@ -45,9 +45,9 @@ nfpms:
     file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     contents:
       - src: LICENSE
-        dst: /usr/share/doc/kubeview/LICENSE
+        dst: /usr/share/doc/tankertop/LICENSE
       - src: README.md
-        dst: /usr/share/doc/kubeview/README.md
+        dst: /usr/share/doc/tankertop/README.md
 
 checksum:
   name_template: checksums.txt

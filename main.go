@@ -15,8 +15,8 @@ import (
 	"github.com/muesli/termenv"
 	"k8s.io/klog/v2"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
-	"github.com/tpenzkofer/kubeview/internal/ui"
+	"github.com/tankertop/tankertop/internal/cluster"
+	"github.com/tankertop/tankertop/internal/ui"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
@@ -35,7 +35,7 @@ func main() { os.Exit(run()) }
 
 // cleanupOnSignal tears the ssh tunnel down on the signals that would otherwise
 // kill us without running deferred functions. SIGPIPE is the one that bites in
-// practice: `kubeview --ssh host --snapshot | head` closes the pipe, and Go's
+// practice: `tankertop --ssh host --snapshot | head` closes the pipe, and Go's
 // default handling for a broken stdout is to die on the spot, orphaning `ssh -N`.
 // SIGINT is left to bubbletea, which quits cleanly on ctrl-c.
 func cleanupOnSignal(c *cluster.Client) {
@@ -74,7 +74,7 @@ func run() int {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("kubeview", version)
+		fmt.Println("tankertop", version)
 		return 0
 	}
 
@@ -91,7 +91,7 @@ func run() int {
 	klog.LogToStderr(false)
 
 	if *demo && (*sshTarget != "" || *dockerMode) {
-		fmt.Fprintln(os.Stderr, "kubeview: --demo cannot be combined with --ssh or --docker")
+		fmt.Fprintln(os.Stderr, "tankertop: --demo cannot be combined with --ssh or --docker")
 		return 1
 	}
 
@@ -104,7 +104,7 @@ func run() int {
 		// --docker --ssh host runs docker on that host (no kube tunnel).
 		client, err = cluster.NewDocker(*dockerBin, *sshTarget, sshOpts)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
+			fmt.Fprintf(os.Stderr, "tankertop: %v\n", err)
 			return 1
 		}
 	case *sshTarget != "":
@@ -112,16 +112,16 @@ func run() int {
 		// passphrase, a password or 2FA on the real terminal.
 		client, err = cluster.NewSSH(*sshTarget, sshOpts, *sshKubeconfigCmd, *kubectlCmd)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
+			fmt.Fprintf(os.Stderr, "tankertop: %v\n", err)
 			return 1
 		}
 	default:
 		client, err = cluster.New(*kubeconfig, *kubectlCmd)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "kubeview: cannot connect to cluster: %v\n", err)
+			fmt.Fprintf(os.Stderr, "tankertop: cannot connect to cluster: %v\n", err)
 			fmt.Fprintln(os.Stderr, "hint: on a microk8s node run:  microk8s config > ~/.kube/config")
-			fmt.Fprintln(os.Stderr, "  or monitor it from here:  kubeview --ssh user@node")
-			fmt.Fprintln(os.Stderr, "  or try:  kubeview --demo")
+			fmt.Fprintln(os.Stderr, "  or monitor it from here:  tankertop --ssh user@node")
+			fmt.Fprintln(os.Stderr, "  or try:  tankertop --demo")
 			return 1
 		}
 	}
@@ -130,7 +130,7 @@ func run() int {
 
 	if *snapshot {
 		if err := ui.PrintSnapshot(os.Stdout, client, *namespace); err != nil {
-			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
+			fmt.Fprintf(os.Stderr, "tankertop: %v\n", err)
 			return 1
 		}
 		return 0
@@ -139,7 +139,7 @@ func run() int {
 	if *dumpFrame != "" {
 		var w, h int
 		if _, err := fmt.Sscanf(*dumpFrame, "%dx%d", &w, &h); err != nil || w <= 0 || h <= 0 {
-			fmt.Fprintln(os.Stderr, "kubeview: -dump-frame expects WxH, e.g. 140x40")
+			fmt.Fprintln(os.Stderr, "tankertop: -dump-frame expects WxH, e.g. 140x40")
 			return 1
 		}
 		fmt.Println(ui.RenderOnce(client, *namespace, w, h, *frameMode))
@@ -149,7 +149,7 @@ func run() int {
 	model := ui.New(client, *interval, *namespace).WithConfig(cfg)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tankertop: %v\n", err)
 		return 1
 	}
 	return 0

@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 // forward is a background `kubectl port-forward` process.

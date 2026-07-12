@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 type viewMode int

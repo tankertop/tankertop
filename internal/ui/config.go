@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Config is the small slice of state kubeview remembers between runs.
+// Config is the small slice of state tankertop remembers between runs.
 type Config struct {
 	Theme      string `json:"theme"`
 	Sort       int    `json:"sort"`
@@ -18,10 +18,10 @@ type Config struct {
 
 func configPath() string {
 	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "kubeview", "config.json")
+		return filepath.Join(dir, "tankertop", "config.json")
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".kubeview.json")
+	return filepath.Join(home, ".tankertop.json")
 }
 
 // LoadConfig reads the saved config, falling back to sensible defaults.

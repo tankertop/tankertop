@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// Gated live test: KUBEVIEW_LIVE=1 go test ./internal/cluster -run Exec -v
+// Gated live test: TANKERTOP_LIVE=1 go test ./internal/cluster -run Exec -v
 func TestExecLive(t *testing.T) {
-	if os.Getenv("KUBEVIEW_LIVE") == "" {
-		t.Skip("set KUBEVIEW_LIVE=1 to run against the real cluster")
+	if os.Getenv("TANKERTOP_LIVE") == "" {
+		t.Skip("set TANKERTOP_LIVE=1 to run against the real cluster")
 	}
 	c, err := New("", "")
 	if err != nil {

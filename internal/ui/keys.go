@@ -3,7 +3,7 @@ package ui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -61,7 +61,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.saveConfig()
 		return m, nil
 	case "?":
-		m.textTitle = "kubeview — keys & plain-language hints"
+		m.textTitle = "tankertop — keys & plain-language hints"
 		m.textLines = helpLines()
 		m.textScroll = 0
 		m.view = viewText

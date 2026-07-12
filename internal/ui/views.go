@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 func (m Model) View() string {
@@ -1453,7 +1453,7 @@ func portFwdPrompt(p cluster.PodInfo) string {
 
 func helpLines() []string {
 	return []string{
-		styHeader.Render("kubeview — a btop-style control room for Kubernetes"),
+		styHeader.Render("tankertop — a btop-style control room for Kubernetes"),
 		"",
 		styText.Render("Mental model for a *nix veteran:"),
 		styDim.Render("  • A container is just a process tree in its own mount + network + PID namespaces, fenced off with cgroups."),

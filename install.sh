@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# Install kubeview from GitHub Releases.
+# Install tankertop from GitHub Releases.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/tpenzkofer/kubeview/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tankertop/tankertop/main/install.sh | bash
 #   ./install.sh v0.1.0            # a specific tag
-#   KUBEVIEW_DEST=~/bin ./install.sh
+#   TANKERTOP_DEST=~/bin ./install.sh
 #
 set -euo pipefail
 
-REPO="${KUBEVIEW_REPO:-tpenzkofer/kubeview}"
-DEST="${KUBEVIEW_DEST:-/usr/local/bin}"
+REPO="${TANKERTOP_REPO:-tankertop/tankertop}"
+DEST="${TANKERTOP_DEST:-/usr/local/bin}"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)
@@ -35,9 +35,9 @@ if [ -z "$tag" ]; then
   exit 1
 fi
 
-asset="kubeview_${tag#v}_${os}_${arch}.tar.gz"
+asset="tankertop_${tag#v}_${os}_${arch}.tar.gz"
 url="https://github.com/$REPO/releases/download/$tag/$asset"
-echo "installing kubeview $tag ($os/$arch)"
+echo "installing tankertop $tag ($os/$arch)"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -49,11 +49,11 @@ if ! curl -fsSL "$url" -o "$tmp/$asset" 2>/dev/null; then
 fi
 tar -xzf "$tmp/$asset" -C "$tmp"
 
-if install -m 0755 "$tmp/kubeview" "$DEST/kubeview" 2>/dev/null; then
+if install -m 0755 "$tmp/tankertop" "$DEST/tankertop" 2>/dev/null; then
   :
 else
   echo "elevating with sudo to write $DEST"
-  sudo install -m 0755 "$tmp/kubeview" "$DEST/kubeview"
+  sudo install -m 0755 "$tmp/tankertop" "$DEST/tankertop"
 fi
 
-echo "installed: $("$DEST/kubeview" --version)"
+echo "installed: $("$DEST/tankertop" --version)"

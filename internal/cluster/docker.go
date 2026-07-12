@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// The Docker backend maps a container host onto kubeview's Kubernetes model:
+// The Docker backend maps a container host onto tankertop's Kubernetes model:
 // a container is a "pod", the Compose project is its "namespace", the Compose
 // service is its "workload". It shells out to the docker CLI (so podman and
 // nerdctl work too, via --docker-bin), optionally wrapped in ssh — which is how
@@ -328,7 +328,7 @@ func (c *Client) collectDockerNetworks(ctx context.Context) []DockerNetwork {
 	return out
 }
 
-// containerToPod maps one inspected container onto kubeview's PodInfo.
+// containerToPod maps one inspected container onto tankertop's PodInfo.
 func containerToPod(d *dockerInspect, stats map[string]dockerStat, host string) PodInfo {
 	name := strings.TrimPrefix(d.Name, "/")
 	project := d.Config.Labels["com.docker.compose.project"]
@@ -396,7 +396,7 @@ func containerToPod(d *dockerInspect, stats map[string]dockerStat, host string) 
 	return pi
 }
 
-// dockerStatus maps docker's state to kubeview's status vocabulary so the
+// dockerStatus maps docker's state to tankertop's status vocabulary so the
 // existing colour coding applies.
 func dockerStatus(d *dockerInspect) (status string, ready int) {
 	switch d.State.Status {
@@ -429,7 +429,7 @@ func dockerStatus(d *dockerInspect) (status string, ready int) {
 	return d.State.Status, 0
 }
 
-// dockerEnv turns docker's KEY=value env into kubeview's EnvVar list. Docker has
+// dockerEnv turns docker's KEY=value env into tankertop's EnvVar list. Docker has
 // no indirect sources, so every value is literal.
 func dockerEnv(env []string) []EnvVar {
 	if len(env) == 0 {
@@ -460,7 +460,7 @@ func (c *Client) dockerExec(ctx context.Context, name string, command []string) 
 	return string(b), err
 }
 
-// dockerYAML renders `docker inspect` as YAML (kubeview's `y` shows it in place
+// dockerYAML renders `docker inspect` as YAML (tankertop's `y` shows it in place
 // of a pod manifest).
 func (c *Client) dockerYAML(ctx context.Context, name string) (string, error) {
 	b, err := c.dockerOut(ctx, "inspect", name)

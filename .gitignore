@@ -1,5 +1,5 @@
 # build output
-/kubeview
+/tankertop
 /dist/
 
 # os / editor cruft
@@ -12,3 +12,4 @@ coverage.*
 
 # local tool config
 .claude/settings.local.json
+/kubeview

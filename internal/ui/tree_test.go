@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 func treeModel() Model {

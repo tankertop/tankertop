@@ -21,7 +21,7 @@ const DefaultKubeconfigCmd = `microk8s config 2>/dev/null || kubectl config view
 // shell out to the system ssh rather than speaking the protocol ourselves, so
 // authentication is exactly whatever `ssh <target>` already does on this
 // machine: agent keys, ~/.ssh/config, ProxyJump, known_hosts, password and 2FA
-// prompts. kubeview never sees, asks for, or stores a credential.
+// prompts. tankertop never sees, asks for, or stores a credential.
 type sshTarget struct {
 	target string
 	opts   []string
@@ -60,7 +60,7 @@ func NewSSH(target string, opts []string, kubeconfigCmd, kubectlOverride string)
 		kubeconfigCmd = DefaultKubeconfigCmd
 	}
 
-	fmt.Fprintf(os.Stderr, "kubeview: reading kubeconfig from %s…\n", target)
+	fmt.Fprintf(os.Stderr, "tankertop: reading kubeconfig from %s…\n", target)
 	raw, err := fetchKubeconfig(target, opts, kubeconfigCmd)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func NewSSH(target string, opts []string, kubeconfigCmd, kubectlOverride string)
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "kubeview: tunnelling to %s:%s via %s…\n", apiHost, apiPort, target)
+	fmt.Fprintf(os.Stderr, "tankertop: tunnelling to %s:%s via %s…\n", apiHost, apiPort, target)
 	tun, err := startTunnel(target, opts, apiHost, apiPort)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func fetchKubeconfig(target string, opts []string, remoteCmd string) ([]byte, er
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, &out, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("reading a kubeconfig from %s: %w\n"+
-			"hint: kubeview ran %q there; override it with --ssh-kubeconfig-cmd", target, err, remoteCmd)
+			"hint: tankertop ran %q there; override it with --ssh-kubeconfig-cmd", target, err, remoteCmd)
 	}
 	if len(bytes.TrimSpace(out.Bytes())) == 0 {
 		return nil, fmt.Errorf("%s printed an empty kubeconfig", target)

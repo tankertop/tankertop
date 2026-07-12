@@ -51,7 +51,7 @@ func (c *Client) kubectl() []string {
 }
 
 // NewDemo returns a client that serves a synthetic cluster (no API access).
-// Used by `kubeview --demo` for screenshots, demos and trying it out offline.
+// Used by `tankertop --demo` for screenshots, demos and trying it out offline.
 func NewDemo() *Client {
 	return &Client{Context: "demo", demo: true}
 }

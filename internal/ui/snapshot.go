@@ -9,11 +9,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 // RenderOnce drives the real TUI render path once at the given size and returns
-// the resulting frame. Used by `kubeview --dump-frame` for verification.
+// the resulting frame. Used by `tankertop --dump-frame` for verification.
 func RenderOnce(c *cluster.Client, namespace string, width, height int, mode string) string {
 	var tm tea.Model = New(c, time.Second, namespace)
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: width, Height: height})
@@ -120,7 +120,7 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 }
 
 // PrintSnapshot collects one snapshot and writes a plain-text frame to w.
-// Used by `kubeview --snapshot` for non-interactive / scriptable output.
+// Used by `tankertop --snapshot` for non-interactive / scriptable output.
 func PrintSnapshot(w io.Writer, c *cluster.Client, namespace string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -136,7 +136,7 @@ func PrintSnapshot(w io.Writer, c *cluster.Client, namespace string) error {
 		memUsed += n.MemUsedBytes
 		memCap += n.MemCapacityBytes
 	}
-	fmt.Fprintf(w, "kubeview  ctx:%s  nodes:%d  pods:%d  ns:%d  %s\n",
+	fmt.Fprintf(w, "tankertop  ctx:%s  nodes:%d  pods:%d  ns:%d  %s\n",
 		snap.Context, len(snap.Nodes), len(snap.Pods), len(snap.Namespaces),
 		snap.CollectedAt.Format(time.RFC3339))
 	if !snap.MetricsOK {

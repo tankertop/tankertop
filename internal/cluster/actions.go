@@ -51,7 +51,7 @@ func (c *Client) RestartWorkload(ctx context.Context, p PodInfo) (string, error)
 	}
 	if dep, ok := c.deploymentForPod(ctx, p); ok {
 		patch := fmt.Sprintf(
-			`{"spec":{"template":{"metadata":{"annotations":{"kubeview.dev/restartedAt":%q}}}}}`,
+			`{"spec":{"template":{"metadata":{"annotations":{"tankertop.dev/restartedAt":%q}}}}}`,
 			time.Now().Format(time.RFC3339))
 		_, err := c.Clientset.AppsV1().Deployments(p.Namespace).Patch(
 			ctx, dep, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})

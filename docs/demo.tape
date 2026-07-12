@@ -4,7 +4,7 @@
 #
 # Requires VHS (https://github.com/charmbracelet/vhs) and a monospace font with
 # Braille glyphs installed (e.g. DejaVu Sans Mono — the default JetBrains Mono
-# does NOT render the braille graphs). Uses `kubeview --demo` so no cluster is
+# does NOT render the braille graphs). Uses `tankertop --demo` so no cluster is
 # needed.
 
 Output docs/demo.gif
@@ -18,7 +18,7 @@ Set Padding 16
 Set Framerate 24
 
 Hide
-Type "go build -o kubeview . && HOME=$(mktemp -d) ./kubeview --demo -interval 1s"
+Type "go build -o tankertop . && HOME=$(mktemp -d) ./tankertop --demo -interval 1s"
 Enter
 Sleep 5s
 Show

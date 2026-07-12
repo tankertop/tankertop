@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tpenzkofer/kubeview/internal/cluster"
+	"github.com/tankertop/tankertop/internal/cluster"
 )
 
 func TestMermaidID(t *testing.T) {

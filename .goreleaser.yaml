@@ -49,6 +49,66 @@ nfpms:
       - src: README.md
         dst: /usr/share/doc/tankertop/README.md
 
+dockers:
+  - id: amd64
+    goarch: amd64
+    use: buildx
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/tankertop/tankertop:{{ .Version }}-amd64"
+      - "tankertop/tankertop:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=tankertop"
+      - "--label=org.opencontainers.image.source=https://github.com/tankertop/tankertop"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+  - id: arm64
+    goarch: arm64
+    use: buildx
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/tankertop/tankertop:{{ .Version }}-arm64"
+      - "tankertop/tankertop:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title=tankertop"
+      - "--label=org.opencontainers.image.source=https://github.com/tankertop/tankertop"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+docker_manifests:
+  - name_template: "ghcr.io/tankertop/tankertop:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/tankertop/tankertop:{{ .Version }}-amd64"
+      - "ghcr.io/tankertop/tankertop:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/tankertop/tankertop:latest"
+    image_templates:
+      - "ghcr.io/tankertop/tankertop:{{ .Version }}-amd64"
+      - "ghcr.io/tankertop/tankertop:{{ .Version }}-arm64"
+  - name_template: "tankertop/tankertop:{{ .Version }}"
+    image_templates:
+      - "tankertop/tankertop:{{ .Version }}-amd64"
+      - "tankertop/tankertop:{{ .Version }}-arm64"
+  - name_template: "tankertop/tankertop:latest"
+    image_templates:
+      - "tankertop/tankertop:{{ .Version }}-amd64"
+      - "tankertop/tankertop:{{ .Version }}-arm64"
+
+brews:
+  - repository:
+      owner: tankertop
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/tankertop/tankertop"
+    description: "btop-style terminal dashboard for Kubernetes and Docker, monitorable over SSH with no install."
+    license: MIT
+    install: |
+      bin.install "tankertop"
+    test: |
+      system "#{bin}/tankertop", "--version"
+
 checksum:
   name_template: checksums.txt
 

@@ -1,30 +1,62 @@
 # tankertop
 
-A btop-style terminal dashboard for monitoring a Kubernetes cluster — or, with
-`--docker`, a Docker/Podman/nerdctl host. A multi-pane live view: cluster CPU/MEM
-history (braille graphs), every pod across all namespaces with per-pod CPU
-sparklines, a container-detail pane, an auto-tailed logs pane for the selected
-pod, and per-namespace resource meters.
+A btop-style terminal dashboard for **Kubernetes and Docker** — truecolor braille
+graphs, live logs, an environment/secrets pane, a container filesystem browser,
+and full container management, in one static binary with no runtime dependencies.
 
 ![tankertop screenshot](docs/screenshot.png)
 
 ![tankertop demo](docs/demo.gif)
 
-> Try it without a cluster: `tankertop --demo` renders a synthetic cluster (the
-> data used for the screenshot and animation above).
+Two things set it apart from other cluster/container TUIs:
+
+- **Monitor a remote cluster over SSH with nothing installed on it.**
+  `tankertop --ssh user@node` reads the kubeconfig over SSH and tunnels to the API
+  server — only port 22 needs to be reachable, the API port can stay firewalled,
+  and no agent, binary, or RBAC is ever deployed on the node. Auth is whatever
+  `ssh` already does (agent keys, `~/.ssh/config`, bastions, 2FA).
+- **Try it with no cluster at all.** `--demo` renders a full synthetic cluster —
+  the screenshot and GIF above are `--demo` — so you can see everything before
+  pointing it at anything real:
+
+  ```sh
+  curl -fsSL https://raw.githubusercontent.com/tankertop/tankertop/main/install.sh | bash
+  tankertop --demo
+  ```
+
+It drives **any Kubernetes cluster** — k3s, kind, EKS, GKE, AKS, OpenShift,
+microk8s — through your kubeconfig, and **any container host** (Docker, Podman,
+nerdctl) with `--docker`. It is a single self-contained binary: no daemon, no
+sidecar, no dependencies.
 
 ## Install
 
 tankertop is a single static binary (no runtime deps). Pick one:
 
-**Release binary (installer):** run on the target machine:
+**Installer** (Linux/macOS; verifies the download against the published checksums):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tankertop/tankertop/main/install.sh | bash
-# or a specific version:  ... | bash -s -- v0.1.0
+# or a specific version:  ... | bash -s -- v0.1.1
 ```
 
-**Debian / Ubuntu (`.deb`):** tracked by `dpkg`, so `apt remove tankertop` cleans up.
+**Homebrew** (macOS/Linux):
+
+```sh
+brew install tankertop/tap/tankertop
+```
+
+**Container image** (GHCR and Docker Hub, multi-arch) — great for a quick look
+with no local install; mount a kubeconfig to use a real cluster:
+
+```sh
+docker run --rm -it ghcr.io/tankertop/tankertop --demo
+docker run --rm -it -v "$HOME/.kube:/root/.kube:ro" ghcr.io/tankertop/tankertop
+# Docker Hub mirror: tankertop/tankertop
+```
+
+**Debian/Ubuntu (`.deb`)** — tracked by `dpkg`, so `apt remove tankertop` cleans up
+(an `.rpm` with the same name scheme is published for Fedora/RHEL):
 
 ```sh
 arch=$(dpkg --print-architecture)                     # amd64 or arm64
@@ -35,10 +67,7 @@ curl -fsSLO "https://github.com/tankertop/tankertop/releases/download/${tag}/${d
 sudo apt install "./${deb}"
 ```
 
-An `.rpm` with the same name scheme is published for Fedora/RHEL.
-
-**With Go (≥ the version in `go.mod`):** needs no published release — the module
-proxy resolves `@latest` to the tip of `main`.
+**With Go** (≥ the version in `go.mod`):
 
 ```sh
 go install github.com/tankertop/tankertop@latest
@@ -52,13 +81,19 @@ make build          # ./tankertop for this host
 make dist           # cross-compiled binaries in dist/ (linux/darwin × amd64/arm64)
 ```
 
+Every release publishes a `checksums.txt`; the installer verifies against it
+automatically, and you can check any downloaded asset yourself with
+`sha256sum -c` (or `shasum -a 256`).
+
 ### Prerequisites
 
-A reachable kubeconfig (or in-cluster service account). On a microk8s node:
+A reachable kubeconfig (or an in-cluster service account) — any distribution
+works. `metrics-server` (or equivalent) powers the CPU/MEM meters; without it the
+app still runs and shows `0`. For example, on a microk8s node:
 
 ```sh
 microk8s config > ~/.kube/config
-microk8s enable metrics-server   # needed for the CPU/MEM meters
+microk8s enable metrics-server
 ```
 
 ## Monitor a remote cluster over SSH
@@ -137,7 +172,7 @@ terminal — it is not a background daemon. Three setups:
   It uses the node's `~/.kube/config`. This is the simplest option, and the one
   where `S` and `P` behave most naturally.
 - **With an exported kubeconfig:** `scp node:~/.kube/config ./kc && tankertop
-  -kubeconfig ./kc` (edit the `server:` field to the node's reachable IP). Needs
+  --kubeconfig ./kc` (edit the `server:` field to the node's reachable IP). Needs
   the API server port open to you.
 
 Before a release exists (or to run an unreleased commit), build on the node and
@@ -166,13 +201,13 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 ## Run
 
 ```sh
-./tankertop                  # interactive btop-style TUI (all namespaces)
-./tankertop --demo           # synthetic cluster, no kubeconfig needed
-./tankertop -theme gruvbox   # tokyonight|gruvbox|nord|dracula|mono
-./tankertop -namespace demo  # single namespace
-./tankertop -interval 1s     # refresh rate
-./tankertop --snapshot       # print one plain-text frame and exit (scriptable)
-./tankertop --dump-frame 140x40                 # render one TUI frame to stdout (for testing)
+./tankertop                   # interactive btop-style TUI (all namespaces)
+./tankertop --demo            # synthetic cluster, no kubeconfig needed
+./tankertop --theme gruvbox   # tokyonight|gruvbox|nord|dracula|mono
+./tankertop --namespace demo  # single namespace
+./tankertop --interval 1s     # refresh rate
+./tankertop --snapshot        # print one plain-text frame and exit (scriptable)
+./tankertop --dump-frame 140x40                    # render one TUI frame to stdout (for testing)
 ./tankertop --dump-frame 140x40 --frame-mode net   # modes: list|net|logs|help|modal
 ```
 
@@ -262,20 +297,31 @@ unbounded/under-requested/near-OOM pods.
 
 ## Flags
 
+Flags accept either a single or double dash (`--theme` and `-theme` both work);
+they are documented with `--` for consistency.
+
 | flag | default | meaning |
 |------|---------|---------|
-| `-kubeconfig` | `$KUBECONFIG` or `~/.kube/config` | kubeconfig path |
+| `--kubeconfig` | `$KUBECONFIG` or `~/.kube/config` | kubeconfig path |
 | `--ssh` | off | monitor `[user@]host` over an SSH tunnel; installs nothing there |
 | `--ssh-opt` | — | extra argument passed to `ssh` (repeatable), e.g. `-J bastion` |
 | `--ssh-kubeconfig-cmd` | `microk8s config` … | command run on the SSH host to print a kubeconfig |
 | `--docker` | off | monitor a container engine instead of Kubernetes |
 | `--docker-bin` | `docker` | container CLI for `--docker`: `docker`/`podman`/`nerdctl` |
 | `--kubectl` | auto | kubectl invocation for shell/port-forward (auto-detects `kubectl` or `microk8s kubectl`) |
-| `-namespace` | all | limit to one namespace |
-| `-interval` | `2s` | refresh interval |
-| `-truecolor` | `true` | force 24-bit colour (btop-style gradients) |
-| `-theme` | `tokyonight` | colour theme: `tokyonight`/`gruvbox`/`nord`/`dracula`/`mono` |
+| `--namespace` | all | limit to one namespace |
+| `--interval` | `2s` | refresh interval |
+| `--truecolor` | `true` | force 24-bit colour (btop-style gradients) |
+| `--theme` | `tokyonight` | colour theme: `tokyonight`/`gruvbox`/`nord`/`dracula`/`mono` |
 | `--snapshot` | off | print one frame and exit |
+
+## Roadmap
+
+- **Docker Swarm** — `docker service`/`node`/`stack`, so the nodes and scale views
+  come alive for Swarm. This would make tankertop the one TUI covering Kubernetes,
+  plain Docker/Podman, *and* Swarm.
+- **Process/port/file explorer** — a per-container view of running processes,
+  listening ports (by process), and open files, read straight from `/proc`.
 
 ## Notes
 

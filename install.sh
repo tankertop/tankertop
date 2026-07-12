@@ -47,6 +47,32 @@ if ! curl -fsSL "$url" -o "$tmp/$asset" 2>/dev/null; then
   echo "see https://github.com/$REPO/releases for what is published" >&2
   exit 1
 fi
+
+# Verify the download against the release's published checksums.txt.
+sums_url="https://github.com/$REPO/releases/download/$tag/checksums.txt"
+if curl -fsSL "$sums_url" -o "$tmp/checksums.txt" 2>/dev/null; then
+  want=$(grep " ${asset}\$" "$tmp/checksums.txt" | awk '{print $1}')
+  got=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    got=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    got=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
+  fi
+  if [ -n "$want" ] && [ -n "$got" ]; then
+    if [ "$want" != "$got" ]; then
+      echo "error: checksum mismatch for $asset" >&2
+      echo "  expected $want" >&2
+      echo "  got      $got" >&2
+      exit 1
+    fi
+    echo "checksum verified"
+  else
+    echo "warning: could not verify checksum (no sha256 tool or asset not listed)" >&2
+  fi
+else
+  echo "warning: checksums.txt not found for $tag — skipping verification" >&2
+fi
+
 tar -xzf "$tmp/$asset" -C "$tmp"
 
 if install -m 0755 "$tmp/tankertop" "$DEST/tankertop" 2>/dev/null; then

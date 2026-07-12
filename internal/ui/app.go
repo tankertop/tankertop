@@ -447,13 +447,76 @@ func (m Model) fsListCmd(p cluster.PodInfo, container, path string) tea.Cmd {
 	}
 }
 
-// fsCatCmd reads a file's head into the text view.
+// fsCatCmd reads a file's head into the text view. Binary files are shown as a
+// hex dump so raw control bytes never corrupt the screen.
 func (m Model) fsCatCmd(p cluster.PodInfo, container, path string) tea.Cmd {
 	c := m.client
-	return m.textCmd("file: "+path, func(ctx context.Context) (string, error) {
-		return c.Exec(ctx, p.Namespace, p.Name, container,
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		out, err := c.Exec(ctx, p.Namespace, p.Name, container,
 			[]string{"sh", "-c", `head -c 65536 -- "$1" 2>/dev/null || cat -- "$1"`, "_", path})
-	})
+		if err != nil {
+			return textMsg{title: "file: " + path, body: out, err: err}
+		}
+		if isBinary([]byte(out)) {
+			return textMsg{title: "file: " + path + "  (binary · hex)", body: hexDump([]byte(out))}
+		}
+		return textMsg{title: "file: " + path, body: out}
+	}
+}
+
+// isBinary reports whether data looks like a binary file: a NUL byte, or a high
+// proportion of non-text control bytes in the sampled prefix.
+func isBinary(data []byte) bool {
+	n := len(data)
+	if n > 8192 {
+		n = 8192
+	}
+	nonText := 0
+	for i := 0; i < n; i++ {
+		c := data[i]
+		if c == 0 {
+			return true
+		}
+		if c < 9 || (c > 13 && c < 32) {
+			nonText++
+		}
+	}
+	return n > 0 && nonText*100/n > 15
+}
+
+// hexDump formats data like `hexdump -C`: offset, 16 bytes, and an ASCII gutter.
+func hexDump(data []byte) string {
+	var b strings.Builder
+	for off := 0; off < len(data); off += 16 {
+		end := off + 16
+		if end > len(data) {
+			end = len(data)
+		}
+		row := data[off:end]
+		fmt.Fprintf(&b, "%08x  ", off)
+		for i := 0; i < 16; i++ {
+			if i < len(row) {
+				fmt.Fprintf(&b, "%02x ", row[i])
+			} else {
+				b.WriteString("   ")
+			}
+			if i == 7 {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(" |")
+		for _, c := range row {
+			if c >= 32 && c < 127 {
+				b.WriteByte(c)
+			} else {
+				b.WriteByte('.')
+			}
+		}
+		b.WriteString("|\n")
+	}
+	return b.String()
 }
 
 // parseLsEntries turns `ls -1Ap` output into entries, dirs first.
@@ -768,12 +831,14 @@ func (m Model) dashLayout(bodyH int) (clusterH, nsH, midH, leftW, rightW int) {
 		midH = bodyH - clusterH
 	}
 	W := m.width
-	leftW = W * 56 / 100
-	if leftW < 50 {
-		leftW = 50
+	// Favour the right column (details + logs/env): logs are often long, the pod
+	// table is comparatively narrow.
+	leftW = W * 48 / 100
+	if leftW < 46 {
+		leftW = 46
 	}
-	if leftW > W-36 {
-		leftW = W - 36
+	if leftW > W-40 {
+		leftW = W - 40
 	}
 	rightW = W - leftW
 	return

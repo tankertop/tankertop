@@ -206,7 +206,9 @@ func (m Model) podLines(inner, rows int) []string {
 			pad(humanAge(p.Age.Seconds()), wAge),
 		}, " ")
 		if i == m.cursor {
-			lines = append(lines, stySelect.Render(fit(text, inner-wSpark-1))+" "+spark)
+			// Strip the sparkline's colour and fold it into the highlight, so the
+			// selection bar covers the whole row instead of stopping before it.
+			lines = append(lines, stySelect.Render(fit(text, inner-wSpark-1)+" "+ansi.Strip(spark)))
 			continue
 		}
 		fade := lipgloss.NewStyle().Foreground(fadeColor(i-m.offset, visible))
@@ -339,7 +341,7 @@ func (m Model) treePodRow(p cluster.PodInfo, selected bool, inner int, refCPU fl
 		pad(humanCPU(p.CPUMilli), wCPU), pad(humanBytes(p.MemBytes), wMem),
 	}, " ")
 	if selected {
-		return indent + stySelect.Render(fit(plain, cw-wSpark-1)) + " " + spark
+		return indent + stySelect.Render(fit(plain, cw-wSpark-1)+" "+ansi.Strip(spark))
 	}
 	nameCol := colText
 	switch {

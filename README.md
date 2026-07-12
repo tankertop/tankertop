@@ -66,11 +66,20 @@ curl -fsSLO "https://github.com/tankertop/tankertop/releases/download/${tag}/${d
 sudo apt install "./${deb}"
 ```
 
-**With Go** (≥ the version in `go.mod`):
+**With Go** (≥ the version in `go.mod`; also the simplest route on Windows):
 
 ```sh
 go install github.com/tankertop/tankertop@latest
 ```
+
+**Windows** (experimental): `go install` as above, or grab
+`tankertop_<version>_windows_<arch>.zip` from the
+[releases](https://github.com/tankertop/tankertop/releases) and extract it. Run it
+in **Windows Terminal** — needed for 24-bit colour, and its default Cascadia Mono
+font includes the Braille glyphs the graphs use. `--ssh` uses the built-in
+`ssh.exe`; `--docker` needs `docker.exe` on `PATH`. Windows is newly supported and
+less battle-tested than Linux/macOS — please
+[report](https://github.com/tankertop/tankertop/issues) anything that renders oddly.
 
 **From source:**
 

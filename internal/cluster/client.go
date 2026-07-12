@@ -3,8 +3,13 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -197,6 +202,41 @@ func (c *Client) RuntimeEnv(ctx context.Context, namespace, pod, container strin
 		return c.dockerRuntimeEnv(ctx, pod)
 	}
 	return c.Exec(ctx, namespace, pod, container, []string{"sh", "-c", "env | sort"})
+}
+
+// maxCopyBytes caps a single CopyFile so a huge file can't exhaust memory.
+const maxCopyBytes = 100 << 20 // 100 MiB
+
+// CopyFile downloads a file from a container to the machine running tankertop,
+// into its current working directory, and returns the absolute local path. It
+// streams the bytes through Exec (the same transport as logs/env), so the file
+// arrives locally even under --ssh. Refuses files above maxCopyBytes.
+func (c *Client) CopyFile(ctx context.Context, namespace, pod, container, remotePath string) (string, error) {
+	if c.demo {
+		return "", fmt.Errorf("copy is not available in --demo")
+	}
+	base := path.Base(remotePath)
+	if base == "" || base == "." || base == "/" {
+		return "", fmt.Errorf("cannot copy %q", remotePath)
+	}
+	if szOut, err := c.Exec(ctx, namespace, pod, container,
+		[]string{"sh", "-c", `wc -c < "$1" 2>/dev/null`, "_", remotePath}); err == nil {
+		if n, perr := strconv.ParseInt(strings.TrimSpace(szOut), 10, 64); perr == nil && n > maxCopyBytes {
+			return "", fmt.Errorf("file is %d MB, over the %d MB copy limit", n>>20, maxCopyBytes>>20)
+		}
+	}
+	data, err := c.Exec(ctx, namespace, pod, container, []string{"cat", "--", remotePath})
+	if err != nil {
+		return "", err
+	}
+	dest, err := filepath.Abs(base)
+	if err != nil {
+		dest = base
+	}
+	if err := os.WriteFile(dest, []byte(data), 0o644); err != nil {
+		return "", err
+	}
+	return dest, nil
 }
 
 // PodYAML returns the pod manifest as YAML (with noisy managedFields stripped).

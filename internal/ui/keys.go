@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/tankertop/tankertop/internal/cluster"
@@ -64,6 +66,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textTitle = "tankertop — keys & plain-language hints"
 		m.textLines = helpLines()
 		m.textScroll = 0
+		m.textReturn = viewDash
 		m.view = viewText
 		return m, nil
 	case "r":
@@ -72,8 +75,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch m.view {
 	case viewText:
-		m.handleScrollKey(msg, &m.textScroll, len(m.textLines))
-		return m, nil
+		return m.handleTextKey(msg)
 	case viewNet:
 		m.handleScrollKey(msg, &m.netScroll, m.netTotalLines())
 		return m, nil
@@ -93,6 +95,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m.handleDashKey(msg)
 	}
+}
+
+// handleTextKey drives the yaml/describe/inspect/help/file text view. esc and
+// backspace return to wherever the view was opened from (the file browser for a
+// file, otherwise the dashboard).
+func (m Model) handleTextKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace", "left":
+		m.view = m.textReturn
+		return m, nil
+	}
+	m.handleScrollKey(msg, &m.textScroll, len(m.textLines))
+	return m, nil
+}
+
+// baseName returns the final path element (like filepath.Base for a unix path).
+func baseName(p string) string {
+	p = strings.TrimRight(p, "/")
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 func (m Model) handleFilesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -116,17 +140,30 @@ func (m Model) handleFilesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fsCursor = 0
 	case "G", "end":
 		m.fsCursor = n - 1
-	case "backspace", "h", "left":
+	case "backspace", "left", "h":
+		if m.fsPath == "/" || m.fsPath == "" {
+			m.view = viewDash // already at the root — leave the browser
+			return m, nil
+		}
+		m.fsCursorMem[m.fsPath] = m.fsCursor
+		m.fsSelectName = baseName(m.fsPath) // land on the dir we came up from
 		return m, m.fsListCmd(m.fsPod, m.fsContainer, pathJoin(m.fsPath, ".."))
 	case "r":
 		return m, m.fsListCmd(m.fsPod, m.fsContainer, m.fsPath)
+	case "c":
+		if m.fsCursor >= 0 && m.fsCursor < n && !m.fsEntries[m.fsCursor].dir {
+			return m, m.copyFileCmd(m.fsPod, m.fsContainer, pathJoin(m.fsPath, m.fsEntries[m.fsCursor].name))
+		}
+		m.status = "select a file to copy (not a directory)"
 	case "enter", "right", "l":
 		if m.fsCursor >= 0 && m.fsCursor < n {
 			e := m.fsEntries[m.fsCursor]
 			child := pathJoin(m.fsPath, e.name)
 			if e.dir {
+				m.fsCursorMem[m.fsPath] = m.fsCursor // remember where we were
 				return m, m.fsListCmd(m.fsPod, m.fsContainer, child)
 			}
+			// fsCatCmd's textMsg carries returnTo=viewFiles so esc goes back here.
 			return m, m.fsCatCmd(m.fsPod, m.fsContainer, child)
 		}
 	}

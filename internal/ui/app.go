@@ -147,19 +147,22 @@ type Model struct {
 	envLoading bool
 	envReveal  bool // show secret-looking values instead of masking them
 
-	// text view (yaml/describe/inspect/help)
+	// text view (yaml/describe/inspect/help/file)
 	textTitle  string
 	textLines  []string
 	textScroll int
+	textReturn viewMode // where esc/backspace goes (viewDash, or viewFiles for a file)
 
 	// filesystem browser
-	fsPod       cluster.PodInfo
-	fsContainer string
-	fsPath      string
-	fsEntries   []fsEntry
-	fsCursor    int
-	fsScroll    int
-	fsErr       error
+	fsPod        cluster.PodInfo
+	fsContainer  string
+	fsPath       string
+	fsEntries    []fsEntry
+	fsCursor     int
+	fsScroll     int
+	fsErr        error
+	fsCursorMem  map[string]int // remembered cursor per directory
+	fsSelectName string         // entry to land on once the next listing loads
 
 	netScroll      int
 	eventScroll    int
@@ -209,6 +212,7 @@ type scaleInfoMsg struct {
 type textMsg struct {
 	title, body string
 	err         error
+	returnTo    viewMode // where esc/backspace goes; zero value viewDash
 }
 type execDoneMsg struct{ err error }
 
@@ -235,11 +239,12 @@ func New(c *cluster.Client, interval time.Duration, namespace string) Model {
 		logFollow: true,
 		collapsed: map[string]bool{},
 		fwdCh:     make(chan fwdEvent, 16),
-		nodeCPU:   map[string][]float64{},
-		nodeMEM:   map[string][]float64{},
-		podCPU:    map[string][]float64{},
-		podMEM:    map[string][]float64{},
-		podNet:    map[string][]float64{},
+		nodeCPU:     map[string][]float64{},
+		nodeMEM:     map[string][]float64{},
+		podCPU:      map[string][]float64{},
+		podMEM:      map[string][]float64{},
+		podNet:      map[string][]float64{},
+		fsCursorMem: map[string]int{},
 		netPrev:   map[string]netSample{},
 		netRate:   map[string]netSample{},
 	}
@@ -457,12 +462,28 @@ func (m Model) fsCatCmd(p cluster.PodInfo, container, path string) tea.Cmd {
 		out, err := c.Exec(ctx, p.Namespace, p.Name, container,
 			[]string{"sh", "-c", `head -c 65536 -- "$1" 2>/dev/null || cat -- "$1"`, "_", path})
 		if err != nil {
-			return textMsg{title: "file: " + path, body: out, err: err}
+			return textMsg{title: "file: " + path, body: out, err: err, returnTo: viewFiles}
 		}
 		if isBinary([]byte(out)) {
-			return textMsg{title: "file: " + path + "  (binary · hex)", body: hexDump([]byte(out))}
+			return textMsg{title: "file: " + path + "  (binary · hex)", body: hexDump([]byte(out)), returnTo: viewFiles}
 		}
-		return textMsg{title: "file: " + path, body: out}
+		return textMsg{title: "file: " + path, body: out, returnTo: viewFiles}
+	}
+}
+
+// copyFileCmd downloads a file from the container to the machine running
+// tankertop, streaming it through the same transport Exec uses (so it arrives
+// locally even under --ssh).
+func (m Model) copyFileCmd(p cluster.PodInfo, container, remotePath string) tea.Cmd {
+	c := m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		dest, err := c.CopyFile(ctx, p.Namespace, p.Name, container, remotePath)
+		if err != nil {
+			return actionResultMsg{err: err}
+		}
+		return actionResultMsg{note: "copied to " + dest}
 	}
 }
 
@@ -952,6 +973,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textTitle = msg.title
 		m.textLines = strings.Split(strings.TrimRight(body, "\n"), "\n")
 		m.textScroll = 0
+		m.textReturn = msg.returnTo
 		m.view = viewText
 		return m, nil
 
@@ -959,7 +981,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fsErr = msg.err
 		if msg.err == nil {
 			m.fsPath, m.fsEntries = msg.path, msg.entries
-			m.fsCursor, m.fsScroll = 0, 0
+			m.fsScroll = 0
+			// Land on the directory we came up from, else the remembered cursor
+			// for this directory, else the top.
+			cur := 0
+			if m.fsSelectName != "" {
+				for i, e := range m.fsEntries {
+					if e.name == m.fsSelectName {
+						cur = i
+						break
+					}
+				}
+				m.fsSelectName = ""
+			} else if c, ok := m.fsCursorMem[msg.path]; ok {
+				cur = c
+			}
+			if cur >= len(m.fsEntries) {
+				cur = len(m.fsEntries) - 1
+			}
+			if cur < 0 {
+				cur = 0
+			}
+			m.fsCursor = cur
 		}
 		m.view = viewFiles
 		return m, nil

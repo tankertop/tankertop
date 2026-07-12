@@ -1335,7 +1335,7 @@ func (m Model) renderFilesView(bodyH int) string {
 		}
 	}
 
-	title := fmt.Sprintf("files: %s [%s]  (enter open · backspace up · r refresh · esc back)", m.fsPod.Name, m.fsContainer)
+	title := fmt.Sprintf("files: %s [%s]  (enter open · backspace up · c copy · r refresh · esc back)", m.fsPod.Name, m.fsContainer)
 	return box(title, body, m.width, bodyH)
 }
 
@@ -1415,7 +1415,7 @@ func (m Model) renderFooter() string {
 	var keys string
 	switch m.view {
 	case viewFiles:
-		keys = "↑/↓ move · enter open · backspace up · r refresh · esc back · q quit"
+		keys = "↑/↓ move · enter open · backspace up · c copy to host · r refresh · esc back · q quit"
 	case viewText:
 		keys = "↑/↓ pgup/pgdn scroll · g/G ends · esc back · q quit"
 	case viewNet, viewEvents, viewPressure, viewNodes:
@@ -1489,7 +1489,7 @@ func helpLines() []string {
 		styDim.Render("     pod actions (S i y D d R s P) need a pod row, not a header"),
 		styText.Render("  S  open an interactive shell inside the selected container (exec -it)"),
 		styText.Render("  i  inspect: env, mounts, df, processes, ls /  (read-only)"),
-		styText.Render("  f  browse the container filesystem (enter opens dirs/files, backspace up)"),
+		styText.Render("  f  browse the container filesystem — enter opens, backspace up, c copies a file to the host"),
 		styText.Render("  y  view live YAML        D  describe + recent events"),
 		styText.Render("  d  delete pod            R  restart workload (rollout)"),
 		styText.Render("  s  scale deployment      P  port-forward to this host"),

@@ -88,6 +88,8 @@ func RenderOnce(c *cluster.Client, namespace string, width, height int, mode str
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyTab})
 			tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 		}
+	case "detailgraph":
+		send("v")
 	case "files":
 		// f opens the browser; its listing is async, so fetch it inline.
 		send("f")

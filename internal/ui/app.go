@@ -115,6 +115,10 @@ type Model struct {
 	nodeCPU map[string][]float64
 	nodeMEM map[string][]float64
 	podCPU  map[string][]float64
+	podMEM  map[string][]float64
+	podNet  map[string][]float64 // rate history (bytes/sec), docker only
+
+	detailGraph bool // detail pane shows braille plots instead of the text summary
 
 	// Docker network rate: cumulative counters differenced across snapshots.
 	netPrev map[string]netSample
@@ -129,6 +133,7 @@ type Model struct {
 	logFollow    bool
 	logWrap      bool
 	logScroll    int
+	logHScroll   int // horizontal scroll (columns) when not wrapping
 	logPrevious  bool
 	logSearch    string
 	logSearching bool
@@ -232,6 +237,8 @@ func New(c *cluster.Client, interval time.Duration, namespace string) Model {
 		nodeCPU:   map[string][]float64{},
 		nodeMEM:   map[string][]float64{},
 		podCPU:    map[string][]float64{},
+		podMEM:    map[string][]float64{},
+		podNet:    map[string][]float64{},
 		netPrev:   map[string]netSample{},
 		netRate:   map[string]netSample{},
 	}
@@ -908,8 +915,69 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	}
 	return m, nil
+}
+
+// handleMouse routes the scroll wheel to whatever list currently has focus by
+// synthesising the arrow key the same handlers already understand.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// A modal or text-entry owns the screen; don't scroll underneath it.
+	if m.modal != nil || m.filtering || m.logSearching {
+		return m, nil
+	}
+
+	// Horizontal wheel pans the log pane sideways.
+	if msg.Button == tea.MouseButtonWheelLeft || msg.Button == tea.MouseButtonWheelRight {
+		if m.view == viewDash && m.focus == focusPane && m.pane == paneLogs {
+			if msg.Button == tea.MouseButtonWheelRight && !m.logWrap {
+				m.logHScroll += 8
+			} else if msg.Button == tea.MouseButtonWheelLeft {
+				m.logHScroll -= 8
+				if m.logHScroll < 0 {
+					m.logHScroll = 0
+				}
+			}
+		}
+		return m, nil
+	}
+
+	var key tea.KeyMsg
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		key = tea.KeyMsg{Type: tea.KeyUp}
+	case tea.MouseButtonWheelDown:
+		key = tea.KeyMsg{Type: tea.KeyDown}
+	default:
+		return m, nil
+	}
+
+	switch m.view {
+	case viewText:
+		m.handleScrollKey(key, &m.textScroll, len(m.textLines))
+		return m, nil
+	case viewNet:
+		m.handleScrollKey(key, &m.netScroll, m.netTotalLines())
+		return m, nil
+	case viewEvents:
+		m.handleScrollKey(key, &m.eventScroll, len(m.snap.Events))
+		return m, nil
+	case viewPressure:
+		m.handleScrollKey(key, &m.pressureScroll, len(m.snap.Pods))
+		return m, nil
+	case viewNodes:
+		m.handleScrollKey(key, &m.nodeScroll, len(m.snap.Nodes)*8)
+		return m, nil
+	case viewForwards:
+		return m.handleForwardsKey(key)
+	case viewFiles:
+		return m.handleFilesKey(key)
+	default:
+		return m.handleDashKey(key)
+	}
 }
 
 func (m *Model) recordHistory() {
@@ -938,10 +1006,12 @@ func (m *Model) recordHistory() {
 		key := p.Namespace + "/" + p.Name
 		seen[key] = struct{}{}
 		m.podCPU[key] = appendHist(m.podCPU[key], float64(p.CPUMilli), podHistLen)
+		m.podMEM[key] = appendHist(m.podMEM[key], float64(p.MemBytes), podHistLen)
 	}
 	for k := range m.podCPU {
 		if _, ok := seen[k]; !ok {
 			delete(m.podCPU, k)
+			delete(m.podMEM, k)
 		}
 	}
 	m.recordNetRates(seen)
@@ -960,10 +1030,12 @@ func (m *Model) recordNetRates(live map[string]struct{}) {
 		cur := netSample{rx: float64(p.NetRxBytes), tx: float64(p.NetTxBytes), t: now}
 		if prev, ok := m.netPrev[key]; ok {
 			if dt := now.Sub(prev.t).Seconds(); dt > 0 {
-				m.netRate[key] = netSample{
+				r := netSample{
 					rx: math.Max(0, (cur.rx-prev.rx)/dt),
 					tx: math.Max(0, (cur.tx-prev.tx)/dt),
 				}
+				m.netRate[key] = r
+				m.podNet[key] = appendHist(m.podNet[key], r.rx+r.tx, podHistLen)
 			}
 		}
 		m.netPrev[key] = cur
@@ -972,6 +1044,7 @@ func (m *Model) recordNetRates(live map[string]struct{}) {
 		if _, ok := live[k]; !ok {
 			delete(m.netPrev, k)
 			delete(m.netRate, k)
+			delete(m.podNet, k)
 		}
 	}
 }

@@ -400,8 +400,59 @@ func plural(n int) string {
 	return "s"
 }
 
-// detailLines is a compact summary strip (with inline plain-language hints).
+// detailLines is a compact summary strip, or (when toggled with v) small braille
+// plots of the selected container's CPU / memory / network history.
 func (m Model) detailLines(p cluster.PodInfo, inner int) []string {
+	if m.detailGraph {
+		return m.detailGraphLines(p, inner)
+	}
+	return m.detailInfoLines(p, inner)
+}
+
+// detailGraphLines draws one braille sparkline per metric, each self-scaled to
+// its own recent peak, with the current value alongside.
+func (m Model) detailGraphLines(p cluster.PodInfo, inner int) []string {
+	key := p.Namespace + "/" + p.Name
+	labelW, valW := 4, 12
+	sparkW := inner - labelW - valW - 2
+	if sparkW < 8 {
+		sparkW = 8
+	}
+	row := func(label, val string, hist []float64) string {
+		return styDim.Render(pad(label, labelW)) + podSpark(hist, seriesMax(hist), sparkW) +
+			" " + styText.Render(pad(val, valW))
+	}
+
+	lines := []string{
+		lipgloss.NewStyle().Foreground(statusColor(p.Status)).Bold(true).Render(pad(p.Status, 12)) +
+			styDim.Render(m.selectedContainer()+"  (v: back to info)"),
+		row("cpu", humanCPU(p.CPUMilli), m.podCPU[key]),
+		row("mem", humanBytes(p.MemBytes), m.podMEM[key]),
+	}
+	if m.client.IsDocker() {
+		val := "—"
+		if r, ok := m.netRate[key]; ok {
+			val = "↓" + humanBytes(int64(r.rx)) + " ↑" + humanBytes(int64(r.tx))
+		}
+		lines = append(lines, row("net", val, m.podNet[key]))
+	}
+	return lines
+}
+
+func seriesMax(h []float64) float64 {
+	mx := 0.0
+	for _, v := range h {
+		if v > mx {
+			mx = v
+		}
+	}
+	if mx <= 0 {
+		return 1
+	}
+	return mx
+}
+
+func (m Model) detailInfoLines(p cluster.PodInfo, inner int) []string {
 	owner := "via " + p.Controller
 	if p.Controller == "" || p.Controller == "(standalone)" {
 		owner = "standalone pod"
@@ -488,6 +539,9 @@ func (m Model) logsTitle() string {
 	if !m.logFollow {
 		state = fmt.Sprintf("scroll +%d", m.logScroll)
 	}
+	if m.logHScroll > 0 {
+		state += fmt.Sprintf(" »%d", m.logHScroll)
+	}
 	if m.logSearch != "" {
 		state += " /" + m.logSearch
 	}
@@ -533,9 +587,22 @@ func (m Model) logPaneLines(inner, rows int) []string {
 	}
 	out := make([]string, 0, end-start)
 	for _, l := range lines[start:end] {
-		out = append(out, logColor(l).Render(fit(l, inner)))
+		st := logColor(l) // severity from the whole line, before horizontal slicing
+		out = append(out, st.Render(fit(hslice(l, m.logHScroll), inner)))
 	}
 	return out
+}
+
+// hslice drops the first n columns of a line, for horizontal scrolling.
+func hslice(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	r := []rune(s)
+	if n >= len(r) {
+		return ""
+	}
+	return string(r[n:])
 }
 
 // logColor tints a log line by apparent severity — error/warn lines are where
@@ -1353,11 +1420,11 @@ func (m Model) renderFooter() string {
 		case m.focus == focusPane && m.pane == paneEnv:
 			keys = "ENV  ↑/↓ pgup/pgdn scroll · m mask/reveal · R re-read · [ ] container · e logs · tab back"
 		case m.focus == focusPane:
-			keys = "LOGS  ↑/↓ scroll · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
+			keys = "LOGS  ↑/↓ scroll · ←/→ pan · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
 		case m.tree:
 			keys = "↑/↓ move (rows & headers) · space fold/unfold · n namespace · N all · o sort · t flat · tab pane · e env · " + m.actionKeys() + " · ?"
 		default:
-			keys = "↑/↓ move · o sort · t tree · tab pane · e env · " + m.actionKeys() + " · 2-6 views · T theme · ?"
+			keys = "↑/↓ move · o sort · t tree · tab pane · e env · v graphs · " + m.actionKeys() + " · 2-6 views · ?"
 		}
 	}
 	bar := styDim.Render(" " + keys)
@@ -1402,6 +1469,8 @@ func helpLines() []string {
 		styDim.Render("  preferences (theme, sort, tree, namespace, interval) are saved to " + configPath()),
 		styText.Render("  tab           switch focus between the pods list and the bottom-right pane"),
 		styText.Render("  e             switch that pane between logs and the container's environment"),
+		styText.Render("  v             switch the detail pane between the text summary and braille plots"),
+		styDim.Render("  mouse         scroll wheel scrolls whichever list/pane has focus"),
 		"",
 		styHeader.Render("Pods list (focused)"),
 		styText.Render("  ↑/↓ pgup/pgdn g/G  move    / filter pods by name"),
@@ -1419,7 +1488,7 @@ func helpLines() []string {
 		styText.Render("  s  scale deployment      P  port-forward to this host"),
 		"",
 		styHeader.Render("Logs pane (focused, via tab)"),
-		styText.Render("  ↑/↓ pgup/pgdn g/G scroll   f follow tail   w wrap"),
+		styText.Render("  ↑/↓ pgup/pgdn g/G scroll   ←/→ pan sideways   f follow tail   w wrap"),
 		styText.Render("  p  toggle previous-container logs (why a CrashLoopBackOff died)"),
 		styText.Render("  [ ]  switch container      / search within the log"),
 		"",

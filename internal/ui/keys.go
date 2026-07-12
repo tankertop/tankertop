@@ -140,6 +140,13 @@ func (m Model) handleFilesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// v toggles the detail pane between the text summary and braille plots,
+	// whichever pane has focus.
+	if msg.String() == "v" {
+		m.detailGraph = !m.detailGraph
+		return m, nil
+	}
+
 	// Bottom-right pane focused: scroll & per-mode controls.
 	if m.focus == focusPane {
 		if msg.String() == "e" {
@@ -353,6 +360,15 @@ func (m Model) handleLogPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G", "end":
 		m.logScroll = 0
 		m.logFollow = true
+	case "left", "h":
+		m.logHScroll -= 8
+		if m.logHScroll < 0 {
+			m.logHScroll = 0
+		}
+	case "right", "l":
+		if !m.logWrap {
+			m.logHScroll += 8
+		}
 	case "f":
 		m.logFollow = !m.logFollow
 		if m.logFollow {
@@ -360,6 +376,7 @@ func (m Model) handleLogPaneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "w":
 		m.logWrap = !m.logWrap
+		m.logHScroll = 0 // horizontal scroll is meaningless while wrapping
 	case "p":
 		m.logPrevious = !m.logPrevious
 		return m, m.logsCmd(false)
@@ -453,6 +470,7 @@ func (m *Model) dockerActionPod() (cluster.PodInfo, bool) {
 func (m Model) onSelectionChange() (tea.Model, tea.Cmd) {
 	m.selContainer = 0
 	m.logScroll = 0
+	m.logHScroll = 0
 	m.logFollow = true
 	m.logPrevious = false
 	m.envScroll = 0

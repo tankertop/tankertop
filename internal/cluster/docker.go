@@ -56,7 +56,18 @@ func (c *Client) dockerCmd(tty bool, args ...string) *exec.Cmd {
 
 // dockerOut runs a docker command and returns stdout, surfacing stderr on error.
 func (c *Client) dockerOut(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := c.dockerCmd(false, args...)
+	return runCapture(ctx, c.dockerCmd(false, args...))
+}
+
+// hostOut runs a shell snippet on the host that owns the engine (this machine,
+// or the remote under --ssh), for reading /proc.
+func (c *Client) hostOut(ctx context.Context, script string) ([]byte, error) {
+	return runCapture(ctx, c.remoteCmd(false, []string{"sh", "-c", script}))
+}
+
+// runCapture runs cmd with a context deadline, returning stdout and surfacing
+// stderr on error.
+func runCapture(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	done := make(chan error, 1)
@@ -70,8 +81,7 @@ func (c *Client) dockerOut(ctx context.Context, args ...string) ([]byte, error) 
 		return nil, ctx.Err()
 	case err := <-done:
 		if err != nil {
-			msg := strings.TrimSpace(errb.String())
-			if msg != "" {
+			if msg := strings.TrimSpace(errb.String()); msg != "" {
 				return out.Bytes(), fmt.Errorf("%s", msg)
 			}
 			return out.Bytes(), err
@@ -213,8 +223,45 @@ func (c *Client) dockerCollect(ctx context.Context, namespace string) Snapshot {
 		PodCount:     info.ContainersRunning,
 		PodsCapacity: info.Containers,
 	}}
+	if len(snap.Nodes) > 0 {
+		c.readHostStats(ctx, &snap.Nodes[0])
+	}
 	snap.Networks = c.collectDockerNetworks(ctx)
 	return snap
+}
+
+// readHostStats fills load average and swap from the engine host's /proc. Best
+// effort — a daemon reached via DOCKER_HOST may not be this machine, in which
+// case /proc is simply irrelevant and the fields stay zero.
+func (c *Client) readHostStats(ctx context.Context, n *NodeInfo) {
+	out, err := c.hostOut(ctx, "cat /proc/loadavg; echo '@@'; grep -E '^Swap(Total|Free):' /proc/meminfo")
+	if err != nil {
+		return
+	}
+	parts := strings.SplitN(string(out), "@@", 2)
+	if f := strings.Fields(parts[0]); len(f) >= 3 {
+		n.Load1, _ = strconv.ParseFloat(f[0], 64)
+		n.Load5, _ = strconv.ParseFloat(f[1], 64)
+		n.Load15, _ = strconv.ParseFloat(f[2], 64)
+	}
+	if len(parts) == 2 {
+		var total, free int64
+		for _, line := range strings.Split(parts[1], "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			kb, _ := strconv.ParseInt(fields[1], 10, 64) // /proc/meminfo is in kB
+			switch fields[0] {
+			case "SwapTotal:":
+				total = kb * 1024
+			case "SwapFree:":
+				free = kb * 1024
+			}
+		}
+		n.SwapTotalBytes = total
+		n.SwapUsedBytes = total - free
+	}
 }
 
 // DockerNetwork is one docker network and the containers attached to it.

@@ -1149,6 +1149,18 @@ func (m Model) buildNodeLines(inner int) []string {
 		}
 		out = append(out, "  "+meter("PODS", podFrac, fmt.Sprintf("%d / %d   ephemeral-storage cap %s",
 			n.PodCount, n.PodsCapacity, humanBytes(n.EphemeralCapBytes)), bw))
+
+		// Docker host extras from /proc: a swap meter and load average.
+		if n.SwapTotalBytes > 0 {
+			swapFrac := float64(n.SwapUsedBytes) / float64(n.SwapTotalBytes)
+			out = append(out, "  "+meter("SWAP", swapFrac, fmt.Sprintf("%s / %s",
+				humanBytes(n.SwapUsedBytes), humanBytes(n.SwapTotalBytes)), bw))
+		}
+		if n.Load1 > 0 || n.Load5 > 0 || n.Load15 > 0 {
+			cores := n.CPUAllocMilli / 1000
+			out = append(out, "  "+styDim.Render(fmt.Sprintf("load  %.2f  %.2f  %.2f   (1 / 5 / 15 min, %d cores)",
+				n.Load1, n.Load5, n.Load15, cores)))
+		}
 		out = append(out, "")
 	}
 	return out

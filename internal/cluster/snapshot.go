@@ -42,6 +42,10 @@ type NodeInfo struct {
 	PodsCapacity      int
 	EphemeralCapBytes int64
 	Conditions        []string // pressure conditions currently true
+	// Docker host stats read from /proc (0 for Kubernetes nodes).
+	Load1, Load5, Load15 float64
+	SwapUsedBytes        int64
+	SwapTotalBytes       int64
 }
 
 // PodInfo summarises a pod and aggregates its containers.

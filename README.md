@@ -113,17 +113,18 @@ doesn't expose.
 
 Full container lifecycle, since Docker has one (Kubernetes does not): `u` start,
 `x` stop, `c` pause/unpause, `R` restart, `K` kill (confirmed), `d` remove
-(confirmed).
+(confirmed). `f` browses the container's filesystem. The network view (`2`) lists
+docker networks and the containers on each, plus a copy-paste Mermaid diagram of
+the topology; the nodes view (`5`) adds a swap meter and load average from the
+host's `/proc`.
 
 It shells out to the `docker` CLI (so Podman and nerdctl work via `--docker-bin`);
 with `--ssh` it runs those commands on the remote host over the ssh session, so
 nothing is installed there and no daemon socket needs exposing.
 
 Concepts Docker doesn't have are handled honestly: scaling (`s`) and port-forward
-(`P`) explain they don't apply (containers publish ports directly), and the
-network (`2`) and events (`3`) views — which are built from Kubernetes Services,
-Ingress and control-plane events — are empty. Wiring them to `docker network` and
-`docker events` is the planned next step.
+(`P`) explain they don't apply (containers publish ports directly), and the events
+view (`3`), built from Kubernetes control-plane events, stays empty.
 
 ## Deploy on a server
 
@@ -202,6 +203,7 @@ GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`
 | `/` | filter by namespace/pod name |
 | `S` | open an interactive shell inside the selected container (`exec -it`) |
 | `i` | inspect: env, mounts, `df`, processes, `ls /` (read-only) |
+| `f` | browse the container filesystem (enter opens dirs/files, backspace up) |
 | `y` | view live YAML |
 | `D` | describe + recent events |
 | `d` | delete pod (confirm) |

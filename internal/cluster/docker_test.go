@@ -133,7 +133,7 @@ func TestContainerToPodMapsComposeLabels(t *testing.T) {
 	d.HostConfig.NanoCpus = 1_500_000_000 // 1.5 cores
 
 	stats := map[string]dockerStat{"abc123def456": {ID: "abc123def456", CPUPerc: "5.00%", MemUsage: "1.559MiB / 256MiB"}}
-	p := containerToPod(d, stats, "racoon-tre")
+	p := containerToPod(d, stats, "demo-host")
 
 	if p.Namespace != "kvtest" || p.Controller != "compose/db" {
 		t.Errorf("compose mapping: ns=%q controller=%q", p.Namespace, p.Controller)

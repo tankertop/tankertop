@@ -36,7 +36,7 @@ nfpms:
     package_name: tankertop
     vendor: Tobias Penzkofer
     homepage: https://github.com/tankertop/tankertop
-    maintainer: Tobias Penzkofer <penzkofert@gmail.com>
+    maintainer: Tobias Penzkofer <1944948+tpenzkofer@users.noreply.github.com>
     description: btop-style terminal dashboard for Kubernetes clusters.
     license: MIT
     formats:

@@ -33,7 +33,7 @@ func TestSplitHostPort(t *testing.T) {
 		server, host, port string
 		wantErr            bool
 	}{
-		{server: "https://192.168.64.7:16443", host: "192.168.64.7", port: "16443"},
+		{server: "https://192.0.2.10:16443", host: "192.0.2.10", port: "16443"},
 		{server: "https://k8s.example.com", host: "k8s.example.com", port: "443"},
 		{server: "https://[::1]:6443", host: "::1", port: "6443"},
 		{server: "not a url", wantErr: true},

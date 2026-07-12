@@ -44,7 +44,7 @@ var demoPods = []demoPodSpec{
 	{"monitoring", "loki-0", "StatefulSet/loki", "Running", 1, 1, 0, 240, 130, 70, 640, 200, 0, 512, 1024, "grafana/loki:3.1.0", []int32{3100}, "10.1.5.13"},
 
 	{"kube-system", "coredns-668d6bf9bc-aaa11", "Deployment/coredns", "Running", 1, 1, 0, 1440, 15, 8, 42, 100, 0, 70, 170, "registry.k8s.io/coredns:1.11.1", []int32{53}, "10.1.0.10"},
-	{"kube-system", "calico-node-bbb22", "DaemonSet/calico-node", "Running", 1, 1, 0, 1440, 95, 30, 158, 250, 0, 0, 0, "calico/node:v3.28.0", nil, "192.168.64.7"},
+	{"kube-system", "calico-node-bbb22", "DaemonSet/calico-node", "Running", 1, 1, 0, 1440, 95, 30, 158, 250, 0, 0, 0, "calico/node:v3.28.0", nil, "192.0.2.10"},
 	{"kube-system", "metrics-server-7cf8c8f6d-ccc33", "Deployment/metrics-server", "Running", 1, 1, 0, 300, 18, 10, 34, 100, 0, 200, 0, "registry.k8s.io/metrics-server:0.7.1", []int32{10250}, "10.1.0.11"},
 	{"kube-system", "hostpath-provisioner-ddd44", "Deployment/hostpath-provisioner", "Running", 1, 1, 0, 1400, 5, 3, 12, 0, 0, 0, 0, "cdkbot/hostpath-provisioner:1.5.0", nil, "10.1.0.12"},
 }
@@ -75,7 +75,7 @@ func DemoSnapshot(tick int) Snapshot {
 			Age:         time.Duration(s.ageMin) * time.Minute,
 			CPUMilli:    cpu,
 			MemBytes:    s.memMB * mib,
-			PodIP:       s.ip, HostIP: "192.168.64.7",
+			PodIP:       s.ip, HostIP: "192.0.2.10",
 			Controller:     s.ctrl,
 			ContainerPorts: s.ports,
 			CPUReqMilli:    s.reqCPU, CPULimMilli: s.limCPU,
@@ -126,8 +126,8 @@ func DemoSnapshot(tick int) Snapshot {
 			[]EndpointInfo{{"10.1.5.11", "prometheus-0", true}}},
 	}
 	snap.Ingresses = []IngressInfo{
-		{"default", "web", "public", []string{"demo.example.com/ → web:80", "demo.example.com/api → api:8080"}, "192.168.64.7"},
-		{"monitoring", "grafana", "public", []string{"grafana.example.com/ → grafana:3000"}, "192.168.64.7"},
+		{"default", "web", "public", []string{"demo.example.com/ → web:80", "demo.example.com/api → api:8080"}, "192.0.2.10"},
+		{"monitoring", "grafana", "public", []string{"grafana.example.com/ → grafana:3000"}, "192.0.2.10"},
 	}
 	snap.NetPols = []NetPolInfo{
 		{"default", "default-deny", "<all>", 0, 0},

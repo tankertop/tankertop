@@ -48,29 +48,40 @@ if ! curl -fsSL "$url" -o "$tmp/$asset" 2>/dev/null; then
   exit 1
 fi
 
-# Verify the download against the release's published checksums.txt.
+# Verify the download against the release's published checksums.txt. This fails
+# closed: a missing checksums file, a missing sha256 tool, or an unlisted asset
+# is a hard error, so a tampered or truncated download can never install past a
+# warning. Override only if you understand the risk: TANKERTOP_SKIP_CHECKSUM=1.
 sums_url="https://github.com/$REPO/releases/download/$tag/checksums.txt"
-if curl -fsSL "$sums_url" -o "$tmp/checksums.txt" 2>/dev/null; then
+if [ "${TANKERTOP_SKIP_CHECKSUM:-0}" = "1" ]; then
+  echo "warning: TANKERTOP_SKIP_CHECKSUM=1 set — installing without verification" >&2
+else
+  if ! curl -fsSL "$sums_url" -o "$tmp/checksums.txt" 2>/dev/null; then
+    echo "error: checksums.txt not found for $tag — refusing to install unverified" >&2
+    echo "  (set TANKERTOP_SKIP_CHECKSUM=1 to override at your own risk)" >&2
+    exit 1
+  fi
   want=$(grep " ${asset}\$" "$tmp/checksums.txt" | awk '{print $1}')
-  got=""
+  if [ -z "$want" ]; then
+    echo "error: $asset is not listed in checksums.txt — refusing to install unverified" >&2
+    exit 1
+  fi
   if command -v sha256sum >/dev/null 2>&1; then
     got=$(sha256sum "$tmp/$asset" | awk '{print $1}')
   elif command -v shasum >/dev/null 2>&1; then
     got=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
-  fi
-  if [ -n "$want" ] && [ -n "$got" ]; then
-    if [ "$want" != "$got" ]; then
-      echo "error: checksum mismatch for $asset" >&2
-      echo "  expected $want" >&2
-      echo "  got      $got" >&2
-      exit 1
-    fi
-    echo "checksum verified"
   else
-    echo "warning: could not verify checksum (no sha256 tool or asset not listed)" >&2
+    echo "error: no sha256sum or shasum available to verify the download" >&2
+    echo "  (set TANKERTOP_SKIP_CHECKSUM=1 to override at your own risk)" >&2
+    exit 1
   fi
-else
-  echo "warning: checksums.txt not found for $tag — skipping verification" >&2
+  if [ "$want" != "$got" ]; then
+    echo "error: checksum mismatch for $asset" >&2
+    echo "  expected $want" >&2
+    echo "  got      $got" >&2
+    exit 1
+  fi
+  echo "checksum verified"
 fi
 
 tar -xzf "$tmp/$asset" -C "$tmp"

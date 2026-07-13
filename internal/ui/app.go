@@ -558,7 +558,7 @@ func parseLsEntries(out string) []fsEntry {
 		if len(line) < 2 {
 			continue
 		}
-		entries = append(entries, fsEntry{name: line[1:], dir: line[0] == 'd'})
+		entries = append(entries, fsEntry{name: sanitize(line[1:]), dir: line[0] == 'd'})
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		if entries[i].dir != entries[j].dir {
@@ -928,7 +928,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case strings.TrimSpace(body) == "":
 			body = "(no log output)"
 		}
-		m.logBuf = strings.Split(strings.TrimRight(body, "\n"), "\n")
+		m.logBuf = strings.Split(strings.TrimRight(sanitize(body), "\n"), "\n")
 		m.logTitle, m.logKey = msg.title, msg.key
 		if m.logFollow {
 			m.logScroll = 0
@@ -977,7 +977,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			body += "\n\n— error: " + msg.err.Error()
 		}
 		m.textTitle = msg.title
-		m.textLines = strings.Split(strings.TrimRight(body, "\n"), "\n")
+		m.textLines = strings.Split(strings.TrimRight(sanitize(body), "\n"), "\n")
 		m.textScroll = 0
 		m.textReturn = msg.returnTo
 		m.view = viewText

@@ -143,17 +143,23 @@ func (c *Client) Logs(ctx context.Context, namespace, pod, container string, lin
 		// separate "previous" stream to fetch.
 		return c.dockerLogs(ctx, pod, lines)
 	}
+	limit := int64(maxLogBytes)
 	req := c.Clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
 		Container: container,
 		TailLines: &lines,
 		Previous:  previous,
+		// TailLines caps the line *count*, not the byte size — a container that
+		// logs a few enormous lines could still stream gigabytes. LimitBytes caps
+		// it server-side; the io.LimitReader below is a client-side backstop in
+		// case the apiserver ignores it.
+		LimitBytes: &limit,
 	})
 	stream, err := req.Stream(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer stream.Close()
-	data, err := io.ReadAll(stream)
+	data, err := io.ReadAll(io.LimitReader(stream, maxLogBytes))
 	if err != nil {
 		return "", err
 	}
@@ -207,6 +213,10 @@ func (c *Client) RuntimeEnv(ctx context.Context, namespace, pod, container strin
 // maxCopyBytes caps a single CopyFile so a huge file can't exhaust memory.
 const maxCopyBytes = 100 << 20 // 100 MiB
 
+// maxLogBytes caps a single Logs fetch so a container logging a few gigantic
+// lines can't exhaust memory (TailLines bounds the line count, not the size).
+const maxLogBytes = 8 << 20 // 8 MiB
+
 // CopyFile downloads a file from a container to the machine running tankertop,
 // into its current working directory, and returns the absolute local path. It
 // streams the bytes through Exec (the same transport as logs/env), so the file
@@ -215,26 +225,56 @@ func (c *Client) CopyFile(ctx context.Context, namespace, pod, container, remote
 	if c.demo {
 		return "", fmt.Errorf("copy is not available in --demo")
 	}
-	base := path.Base(remotePath)
-	if base == "" || base == "." || base == "/" {
+	// The remote path is POSIX; path.Base strips its directory, and filepath.Base
+	// then strips any local separator (e.g. a stray backslash on Windows) so a
+	// container-controlled name can never escape the working directory.
+	base := filepath.Base(path.Base(remotePath))
+	if base == "" || base == "." || base == ".." || base == string(filepath.Separator) {
 		return "", fmt.Errorf("cannot copy %q", remotePath)
 	}
-	if szOut, err := c.Exec(ctx, namespace, pod, container,
-		[]string{"sh", "-c", `wc -c < "$1" 2>/dev/null`, "_", remotePath}); err == nil {
-		if n, perr := strconv.ParseInt(strings.TrimSpace(szOut), 10, 64); perr == nil && n > maxCopyBytes {
-			return "", fmt.Errorf("file is %d MB, over the %d MB copy limit", n>>20, maxCopyBytes>>20)
+	// Read at most maxCopyBytes+1 with head -c: a hostile container can lie about
+	// a file's size (a device, a FIFO, a sparse file report 0 then stream
+	// forever), so we bound the actual bytes read into memory rather than trust
+	// wc -c. The `|| head -c ... ` fallback covers a head without `--` support.
+	lim := strconv.FormatInt(maxCopyBytes+1, 10)
+	data, err := c.Exec(ctx, namespace, pod, container,
+		[]string{"sh", "-c", `head -c "$1" -- "$2" 2>/dev/null || head -c "$1" "$2"`, "_", lim, remotePath})
+	if err != nil {
+		return "", err
+	}
+	if int64(len(data)) > maxCopyBytes {
+		return "", fmt.Errorf("file exceeds the %d MB copy limit", maxCopyBytes>>20)
+	}
+	// Never overwrite an existing local file. A hostile container could expose a
+	// file named .bashrc / Makefile / id_rsa to clobber the user's own with
+	// attacker-chosen content; O_EXCL refuses that, and we fall forward to the
+	// first free "<name>.N" so an honest re-copy still succeeds.
+	dest := base
+	var f *os.File
+	for i := 0; ; i++ {
+		if i > 0 {
+			dest = fmt.Sprintf("%s.%d", base, i)
+		}
+		f, err = os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			return "", err
+		}
+		if i >= 1000 {
+			return "", fmt.Errorf("too many copies of %q already exist locally", base)
 		}
 	}
-	data, err := c.Exec(ctx, namespace, pod, container, []string{"cat", "--", remotePath})
-	if err != nil {
+	if _, err := f.Write([]byte(data)); err != nil {
+		f.Close()
 		return "", err
 	}
-	dest, err := filepath.Abs(base)
-	if err != nil {
-		dest = base
-	}
-	if err := os.WriteFile(dest, []byte(data), 0o644); err != nil {
+	if err := f.Close(); err != nil {
 		return "", err
+	}
+	if abs, err := filepath.Abs(dest); err == nil {
+		return abs, nil
 	}
 	return dest, nil
 }

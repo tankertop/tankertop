@@ -5,7 +5,37 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
+
+// sanitize makes bytes that originate from a container — log lines, env, file
+// names, file contents, exec error text — safe to print. A hostile container
+// can embed terminal escape sequences: an OSC 52 write hijacks the user's
+// clipboard (pastejacking), others spoof the window title or redraw the screen
+// to forge tankertop's own UI. We strip ANSI escape sequences and drop the
+// remaining C0/C1 control bytes. Newlines, tabs and carriage returns are kept
+// so the caller's own flattener/escaper can decide how to show them.
+func sanitize(s string) string {
+	s = ansi.Strip(s)
+	if !strings.ContainsFunc(s, isControl) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !isControl(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isControl(r rune) bool {
+	if r == '\n' || r == '\r' || r == '\t' {
+		return false
+	}
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
+}
 
 // meter renders a labelled horizontal gauge: "CPU [▓▓▓░░░] 48%  detail".
 func meter(label string, frac float64, detail string, width int) string {

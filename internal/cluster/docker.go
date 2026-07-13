@@ -65,6 +65,50 @@ func (c *Client) hostOut(ctx context.Context, script string) ([]byte, error) {
 	return runCapture(ctx, c.remoteCmd(false, []string{"sh", "-c", script}))
 }
 
+// capWriter buffers up to limit bytes and silently discards the rest, keeping
+// the pipe drained so the child never blocks. It bounds memory when a hostile
+// container streams an unbounded amount (e.g. a few gigantic log lines).
+type capWriter struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if room := w.limit - w.buf.Len(); room > 0 {
+		if len(p) > room {
+			w.buf.Write(p[:room])
+		} else {
+			w.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+// runCaptureLimit is runCapture with a cap on how many stdout bytes are retained.
+func runCaptureLimit(ctx context.Context, cmd *exec.Cmd, limit int) ([]byte, error) {
+	out := &capWriter{limit: limit}
+	var errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = out, &errb
+	done := make(chan error, 1)
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		return nil, ctx.Err()
+	case err := <-done:
+		if err != nil {
+			if msg := strings.TrimSpace(errb.String()); msg != "" {
+				return out.buf.Bytes(), fmt.Errorf("%s", msg)
+			}
+			return out.buf.Bytes(), err
+		}
+		return out.buf.Bytes(), nil
+	}
+}
+
 // runCapture runs cmd with a context deadline, returning stdout and surfacing
 // stderr on error.
 func runCapture(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
@@ -446,7 +490,8 @@ func dockerEnv(env []string) []EnvVar {
 // ---- docker live operations ----
 
 func (c *Client) dockerLogs(ctx context.Context, name string, lines int64) (string, error) {
-	b, err := c.dockerOut(ctx, "logs", "--tail", strconv.FormatInt(lines, 10), "--timestamps", name)
+	cmd := c.dockerCmd(false, "logs", "--tail", strconv.FormatInt(lines, 10), "--timestamps", name)
+	b, err := runCaptureLimit(ctx, cmd, maxLogBytes)
 	return string(b), err
 }
 

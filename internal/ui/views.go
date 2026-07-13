@@ -695,7 +695,7 @@ func (m Model) buildEnvLines(inner int) []string {
 		out = append(out, styDim.Render("  reading…"))
 	case m.envErr != nil:
 		out = append(out,
-			lipgloss.NewStyle().Foreground(colYellow).Render("  "+m.envErr.Error()),
+			lipgloss.NewStyle().Foreground(colYellow).Render("  "+sanitize(m.envErr.Error())),
 			styDim.Render("  (no shell in the image, or the container isn't running — the spec env above still applies)"))
 	case len(m.envRuntime) == 0:
 		out = append(out, styDim.Render("  press e to read it"))
@@ -703,7 +703,7 @@ func (m Model) buildEnvLines(inner int) []string {
 		for _, l := range m.envRuntime {
 			name, value, found := strings.Cut(l, "=")
 			if !found {
-				out = append(out, styText.Render("  "+l))
+				out = append(out, styText.Render("  "+sanitize(l)))
 				continue
 			}
 			out = append(out, "  "+envAssign(name, value, m.envReveal))
@@ -715,19 +715,23 @@ func (m Model) buildEnvLines(inner int) []string {
 // envAssign renders NAME=value, masking values that look like credentials
 // unless the user asked to reveal them.
 func envAssign(name, value string, reveal bool) string {
+	safeName := sanitize(name)
 	if !reveal && looksSecret(name, value) {
-		return lipgloss.NewStyle().Foreground(colCyan).Render(name) +
+		return lipgloss.NewStyle().Foreground(colCyan).Render(safeName) +
 			styDim.Render("=") + lipgloss.NewStyle().Foreground(colYellow).Render("••••••••")
 	}
-	return lipgloss.NewStyle().Foreground(colCyan).Render(name) +
+	return lipgloss.NewStyle().Foreground(colCyan).Render(safeName) +
 		styDim.Render("=") + styText.Render(escapeCtl(value))
 }
 
 var ctlEscaper = strings.NewReplacer("\n", `\n`, "\r", `\r`, "\t", `\t`)
 
-// escapeCtl makes line breaks in an env value visible rather than letting them
-// silently vanish — a trailing \n in a manifest is usually a YAML accident.
+// escapeCtl first strips terminal escape sequences and other control bytes an
+// env value might carry (see sanitize), then makes any remaining line breaks
+// visible rather than letting them silently vanish — a trailing \n in a
+// manifest is usually a YAML accident.
 func escapeCtl(s string) string {
+	s = sanitize(s)
 	if !strings.ContainsAny(s, "\n\r\t") {
 		return s
 	}
@@ -1305,7 +1309,7 @@ func (m Model) renderFilesView(bodyH int) string {
 
 	switch {
 	case m.fsErr != nil:
-		body = append(body, lipgloss.NewStyle().Foreground(colYellow).Render("  "+m.fsErr.Error()),
+		body = append(body, lipgloss.NewStyle().Foreground(colYellow).Render("  "+sanitize(m.fsErr.Error())),
 			styDim.Render("  (no shell in the image, or the path is unreadable)"))
 	case len(m.fsEntries) == 0:
 		body = append(body, styDim.Render("  (empty)"))

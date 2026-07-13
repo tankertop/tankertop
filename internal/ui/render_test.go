@@ -48,4 +48,36 @@ func TestEscapeCtl(t *testing.T) {
 	if got := escapeCtl("no controls"); got != "no controls" {
 		t.Errorf("escapeCtl altered a clean string: %q", got)
 	}
+	// An env value carrying an OSC 52 clipboard-write must be neutralised.
+	if got := escapeCtl("x\x1b]52;c;cm0=\x07y"); strings.ContainsRune(got, 0x1b) || strings.ContainsRune(got, 0x07) {
+		t.Errorf("escapeCtl left an escape sequence intact: %q", got)
+	}
+}
+
+func TestSanitizeStripsTerminalControl(t *testing.T) {
+	// A hostile container's OSC 52 payload (clipboard hijack) and CSI screen
+	// clears must not survive to the terminal.
+	cases := []string{
+		"log \x1b]52;c;cm0gLXJmIH4=\x07 line", // OSC 52 clipboard write
+		"\x1b[2J\x1b[H fake ui",                // clear screen + home
+		"title\x1b]0;spoofed\x07",              // window-title spoof
+		"bell\x07 and \x08backspace",           // BEL + backspace
+		"lone esc \x1b here",                   // stray ESC
+	}
+	for _, in := range cases {
+		got := sanitize(in)
+		for _, r := range got {
+			if isControl(r) {
+				t.Errorf("sanitize(%q) left control byte %#x in %q", in, r, got)
+			}
+		}
+	}
+	// Whitespace that downstream code relies on is preserved.
+	if got := sanitize("a\nb\tc"); got != "a\nb\tc" {
+		t.Errorf("sanitize stripped whitespace: %q", got)
+	}
+	// A clean string is returned unchanged (and cheaply).
+	if got := sanitize("normal text 123"); got != "normal text 123" {
+		t.Errorf("sanitize altered a clean string: %q", got)
+	}
 }
